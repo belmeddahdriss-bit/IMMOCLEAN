@@ -2,72 +2,30 @@ import streamlit as st
 import pandas as pd
 import os
 import datetime
+import re
 from fpdf import FPDF
 
 st.set_page_config(page_title="ImmoClean", page_icon="🏢", layout="wide")
 
 os.makedirs("photos_employes", exist_ok=True)
 FICHIER_DONNEES = "clients.csv"
-FICHIER_PAIEMENTS = "paiements.csv"
 FICHIER_EMPLOYES = "employes.csv"
 FICHIER_PLANNING = "planning.csv"
-FICHIER_PASSAGES = "passages.csv"
+FICHIER_HISTORIQUE = "historique_passages.csv"
 
-# التحقق من الأعمدة الضرورية في بيانات الكليان
-if os.path.exists(FICHIER_DONNEES):
-    df_verif = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-    if "Secteur" not in df_verif.columns:
-        df_verif.insert(1, "Secteur", "Non défini")
-    if "Jour de paiement" not in df_verif.columns:
-        df_verif["Jour de paiement"] = "Le 1"
-    if "Date de debut" not in df_verif.columns:
-        df_verif["Date de debut"] = str(datetime.date.today())
-    df_verif["Téléphone"] = df_verif["Téléphone"].astype(str)
-    df_verif.to_csv(FICHIER_DONNEES, index=False)
+# التحقق من الملفات وتحديثها إذا لزم الأمر
+if not os.path.exists(FICHIER_DONNEES):
+    pd.DataFrame(columns=["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix (MAD)", "Jour de paiement"]).to_csv(FICHIER_DONNEES, index=False)
+if not os.path.exists(FICHIER_HISTORIQUE):
+    pd.DataFrame(columns=["Date", "Résidence", "Employé", "Tâches", "Statut"]).to_csv(FICHIER_HISTORIQUE, index=False)
+else:
+    df_hist_verif = pd.read_csv(FICHIER_HISTORIQUE)
+    if "Tâches" not in df_hist_verif.columns:
+        df_hist_verif.insert(3, "Tâches", "Non spécifié")
+        df_hist_verif.to_csv(FICHIER_HISTORIQUE, index=False)
 
-ANNEE_ACTUELLE = datetime.datetime.now().year
-MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-
-def synchroniser_paiements():
-    if not os.path.exists(FICHIER_DONNEES): return
-    df_clients = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-    if df_clients.empty: return
-    if os.path.exists(FICHIER_PAIEMENTS):
-        df_paiements = pd.read_csv(FICHIER_PAIEMENTS)
-    else:
-        df_paiements = pd.DataFrame(columns=["Résidence", "Année"] + MOIS)
-    
-    clients_existants = df_clients["Résidence"].tolist()
-    for client in clients_existants:
-        if not ((df_paiements["Résidence"] == client) & (df_paiements["Année"] == ANNEE_ACTUELLE)).any():
-            nouveau = {"Résidence": client, "Année": ANNEE_ACTUELLE}
-            for m in MOIS: nouveau[m] = "❌ Non Payé"
-            df_paiements = pd.concat([df_paiements, pd.DataFrame([nouveau])], ignore_index=True)
-    df_paiements.to_csv(FICHIER_PAIEMENTS, index=False)
-
-def synchroniser_passages_par_mois(mois_choisi, annee_choisie):
-    if not os.path.exists(FICHIER_DONNEES): return
-    df_clients = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-    if df_clients.empty: return
-    
-    if os.path.exists(FICHIER_PASSAGES):
-        df_pass = pd.read_csv(FICHIER_PASSAGES)
-    else:
-        df_pass = pd.DataFrame(columns=["Résidence", "Mois", "Année", "Escalier_1", "Escalier_2", "Escalier_3", "Escalier_4", "Terrasse", "Sous_Sol"])
-    
-    clients_existants = df_clients["Résidence"].tolist()
-    for client in clients_existants:
-        services = str(df_clients[df_clients["Résidence"] == client]["Services"].values[0])
-        masque = (df_pass["Résidence"] == client) & (df_pass["Mois"] == mois_choisi) & (df_pass["Année"] == annee_choisie)
-        if not masque.any():
-            nouveau_suivi = {
-                "Résidence": client, "Mois": mois_choisi, "Année": annee_choisie,
-                "Escalier_1": "❌ Non fait", "Escalier_2": "❌ Non fait", "Escalier_3": "❌ Non fait", "Escalier_4": "❌ Non fait",
-                "Terrasse": "❌ Non fait" if "Terrasse" in services else "N/A",
-                "Sous_Sol": "❌ Non fait" if "Sous-sol" in services or "Parking" in services else "N/A"
-            }
-            df_pass = pd.concat([df_pass, pd.DataFrame([nouveau_suivi])], ignore_index=True)
-    df_pass.to_csv(FICHIER_PASSAGES, index=False)
+if not os.path.exists(FICHIER_EMPLOYES):
+    pd.DataFrame(columns=["Nom", "Téléphone", "Poste", "Photo"]).to_csv(FICHIER_EMPLOYES, index=False)
 
 # --- القائمة الجانبية ---
 with st.sidebar:
@@ -80,8 +38,7 @@ with st.sidebar:
         "🏢 Accueil (Liste des clients)", 
         "➕ Ajouter un nouveau client",
         "✏️ Modifier / Supprimer un client",
-        "💰 Suivi des Paiements",
-        "📌 Suivi des Passages (الحصص)", 
+        "🔄 Pointage & Paiements (الحصص والخلاص)", 
         "📄 Générer Reçu (Facture)",
         "👥 Gestion de l'Équipe",
         "📅 Planning Hebdomadaire"
@@ -91,14 +48,12 @@ st.title("ImmoClean FACILITY 🏢")
 
 if menu == "🏢 Accueil (Liste des clients)":
     st.header("Gestion des Clients - Accueil")
-    if os.path.exists(FICHIER_DONNEES):
-        df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-        if not df.empty: 
-            df_affiche = df.copy()
-            df_affiche.index = range(1, len(df_affiche) + 1)
-            st.dataframe(df_affiche, use_container_width=True)
-        else: st.info("الطابلو خاوي حالياً.")
-    else: st.info("مازال ما ضفتي حتى كليان.")
+    df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+    if not df.empty: 
+        df_affiche = df.copy()
+        df_affiche.index = range(1, len(df_affiche) + 1)
+        st.dataframe(df_affiche, use_container_width=True)
+    else: st.info("الطابلو خاوي حالياً.")
 
 elif menu == "➕ Ajouter un nouveau client":
     st.header("➕ Ajouter un nouveau client")
@@ -110,184 +65,219 @@ elif menu == "➕ Ajouter un nouveau client":
         services_choisis = st.multiselect("Type de service", ["Escalier 1 passage par semaine", "Escalier 2 fois par semaine", "Sous-sol (Parking)", "Terrasse", "Bureau"])
         produit = st.radio("Les produits de nettoyage :", ["À notre charge", "À la charge du client"])
         prix = st.number_input("Prix de l'abonnement mensuel (MAD)", min_value=0)
+        jour_paiement = st.selectbox("Jour de paiement préféré:", [f"Le {i}" for i in range(1, 32)])
         
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            jour_paiement = st.selectbox("Jour de paiement (تاريخ الأداء فـ الشهر):", [f"Le {i}" for i in range(1, 32)])
-        with col_f2:
-            date_debut = st.date_input("Date de début (تاريخ بداية العقد / الحصص):", datetime.date.today())
-
         if st.form_submit_button("Enregistrer le client"):
             if not residence or not services_choisis:
                 st.warning("عافاك دخل سمية الإقامة واختار على الأقل خدمة وحدة.")
             else:
                 nouveau = pd.DataFrame({
-                    "Résidence": [residence], 
-                    "Secteur": [secteur], 
-                    "Responsable": [responsable], 
-                    "Téléphone": [str(telephone)], 
-                    "Services": [" + ".join(services_choisis)], 
-                    "Produits": [produit], 
-                    "Prix (MAD)": [prix],
-                    "Jour de paiement": [jour_paiement],
-                    "Date de debut": [str(date_debut)]
+                    "Résidence": [residence], "Secteur": [secteur], "Responsable": [responsable], 
+                    "Téléphone": [str(telephone)], "Services": [" + ".join(services_choisis)], 
+                    "Produits": [produit], "Prix (MAD)": [prix], "Jour de paiement": [jour_paiement]
                 })
-                if os.path.exists(FICHIER_DONNEES): 
-                    df_existant = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-                    df_final = pd.concat([df_existant, nouveau], ignore_index=True)
-                    df_final.to_csv(FICHIER_DONNEES, index=False)
-                else: 
-                    nouveau.to_csv(FICHIER_DONNEES, index=False)
+                df_existant = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+                df_final = pd.concat([df_existant, nouveau], ignore_index=True)
+                df_final.to_csv(FICHIER_DONNEES, index=False)
                 st.success(f"Le client {residence} a été ajouté avec succès !")
 
 elif menu == "✏️ Modifier / Supprimer un client":
     st.header("✏️ Modifier ou Supprimer un client")
-    if os.path.exists(FICHIER_DONNEES):
-        df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-        if not df.empty:
-            client_choisi = st.selectbox("اختار الكليان اللي بغيتي تعدل أو تمسح:", df["Résidence"].tolist())
-            client_info = df[df["Résidence"] == client_choisi].iloc[0]
-            with st.form("form_modifier"):
-                n_secteur = st.text_input("Secteur", value=str(client_info.get("Secteur", "")))
-                n_resp = st.text_input("Responsable (Syndic)", value=str(client_info["Responsable"]))
-                n_tel = st.text_input("Téléphone", value=str(client_info["Téléphone"]))
-                n_prix = st.number_input("Prix (MAD)", value=float(client_info["Prix (MAD)"]))
-                n_jour_p = st.selectbox("Jour de paiement", [f"Le {i}" for i in range(1, 32)], index=0)
-                
-                if st.form_submit_button("💾 Enregistrer"):
-                    df.loc[df["Résidence"] == client_choisi, "Secteur"] = str(n_secteur)
-                    df.loc[df["Résidence"] == client_choisi, "Responsable"] = str(n_resp)
-                    df.loc[df["Résidence"] == client_choisi, "Téléphone"] = str(n_tel)
-                    df.loc[df["Résidence"] == client_choisi, "Prix (MAD)"] = float(n_prix)
-                    df.loc[df["Résidence"] == client_choisi, "Jour de paiement"] = n_jour_p
-                    df.to_csv(FICHIER_DONNEES, index=False)
-                    st.success("تم التعديل بنجاح!")
-                    st.rerun()
-            st.markdown("---")
-            if st.button("❌ Supprimer le client"):
-                df[df["Résidence"] != client_choisi].to_csv(FICHIER_DONNEES, index=False)
-                st.success("تم مسح الكليان!")
+    df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+    if not df.empty:
+        client_choisi = st.selectbox("اختار الكليان اللي بغيتي تعدل أو تمسح:", df["Résidence"].tolist())
+        client_info = df[df["Résidence"] == client_choisi].iloc[0]
+        with st.form("form_modifier"):
+            n_secteur = st.text_input("Secteur", value=str(client_info.get("Secteur", "")))
+            n_resp = st.text_input("Responsable (Syndic)", value=str(client_info["Responsable"]))
+            n_tel = st.text_input("Téléphone", value=str(client_info["Téléphone"]))
+            n_prix = st.number_input("Prix (MAD)", value=float(client_info["Prix (MAD)"]))
+            if st.form_submit_button("💾 Enregistrer"):
+                df.loc[df["Résidence"] == client_choisi, "Secteur"] = str(n_secteur)
+                df.loc[df["Résidence"] == client_choisi, "Responsable"] = str(n_resp)
+                df.loc[df["Résidence"] == client_choisi, "Téléphone"] = str(n_tel)
+                df.loc[df["Résidence"] == client_choisi, "Prix (MAD)"] = float(n_prix)
+                df.to_csv(FICHIER_DONNEES, index=False)
+                st.success("تم التعديل بنجاح!")
+                st.rerun()
+        st.markdown("---")
+        if st.button("❌ Supprimer le client"):
+            df[df["Résidence"] != client_choisi].to_csv(FICHIER_DONNEES, index=False)
+            st.success("تم مسح الكليان!")
+            st.rerun()
+
+elif menu == "🔄 Pointage & Paiements (الحصص والخلاص)":
+    st.header("🔄 Pointage et Cycle de Paiement الذكي")
+    
+    df_clients = pd.read_csv(FICHIER_DONNEES)
+    df_emp = pd.read_csv(FICHIER_EMPLOYES)
+    df_hist = pd.read_csv(FICHIER_HISTORIQUE)
+    
+    if df_clients.empty or df_emp.empty:
+        st.warning("⚠️ خصك ضروري تدخل الكليان والعمال باش تقدر تسجل الحصص.")
+    else:
+        st.subheader("1️⃣ تسجيل حصة عمل جديدة (Pointage اليومي)")
+        with st.form("form_pointage"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                date_passage = st.date_input("تاريخ الحصة", datetime.date.today())
+            with col2:
+                client_choisi = st.selectbox("الإقامة (Résidence)", df_clients["Résidence"].tolist())
+            with col3:
+                emp_choisi = st.selectbox("العامل(ة) المكلف(ة)", df_emp["Nom"].tolist())
+            
+            taches_dict = {
+                "Escaliers": "الدروج (Escaliers)",
+                "Terrasse": "الترّاس (Terrasse)",
+                "Sous-sol": "السوسول (Sous-sol)",
+                "Parking": "الباركينغ (Parking)",
+                "Bureau": "البيرو (Bureau)",
+                "Lavage": "الغسيل / التسييق (Lavage)"
+            }
+            taches_effectuees = st.multiselect(
+                "شنو تنظف فهاد الحصة؟ (Tâches effectuées)",
+                options=list(taches_dict.keys()),
+                format_func=lambda x: taches_dict[x]
+            )
+            
+            if st.form_submit_button("✅ تأكيد إنجاز الحصة"):
+                taches_str = " + ".join(taches_effectuees) if taches_effectuees else "Non specifie"
+                nv_passage = pd.DataFrame({
+                    "Date": [str(date_passage)],
+                    "Résidence": [client_choisi],
+                    "Employé": [emp_choisi],
+                    "Tâches": [taches_str],
+                    "Statut": ["En attente"]
+                })
+                df_hist = pd.concat([df_hist, nv_passage], ignore_index=True)
+                df_hist.to_csv(FICHIER_HISTORIQUE, index=False)
+                st.success("تم تسجيل الحصة بنجاح! العداد تزاد فيه نقطة.")
                 st.rerun()
 
-elif menu == "💰 Suivi des Paiements":
-    st.header("💰 Suivi des Paiements Mensuels")
-    synchroniser_paiements()
-    if os.path.exists(FICHIER_PAIEMENTS):
-        df_paiements = pd.read_csv(FICHIER_PAIEMENTS)
-        annees_dispo = sorted(df_paiements["Année"].unique().tolist(), reverse=True)
-        annee_choisie = st.selectbox("📅 اختار السنة:", annees_dispo)
-        df_filtre = df_paiements[df_paiements["Année"] == annee_choisie].copy()
+        st.markdown("---")
         
-        # دمج تاريخ الأداء مع جدول الأداءات ليكون كلشي واضح للمقاول
-        if os.path.exists(FICHIER_DONNEES):
-            df_c = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-            if "Jour de paiement" in df_c.columns:
-                df_filtre = pd.merge(df_filtre, df_c[["Résidence", "Jour de paiement"]], on="Résidence", how="left")
+        st.subheader("2️⃣ العداد الذكي وتتبع الخلاص (Compteurs)")
+        st.write("هنا كيبان ليك شحال من حصة تدارت لكل إقامة. غير يوصل العداد للحد، غيخرج ليك تنبيه باش تتخلص وتصفر العداد.")
         
-        df_a_afficher = df_filtre.drop(columns=["Année"])
-        df_a_afficher.index = range(1, len(df_a_afficher) + 1)
-
-        config_col = {m: st.column_config.SelectboxColumn(m, options=["❌ Non Payé", "✅ Payé"], required=True) for m in MOIS}
-        df_modifie = st.data_editor(df_a_afficher, use_container_width=True, hide_index=False, column_config=config_col, disabled=["Résidence", "Jour de paiement"])
-        if st.button("💾 Enregistrer les paiements"):
-            for index, row in df_modifie.iterrows():
-                masque = (df_paiements["Résidence"] == row["Résidence"]) & (df_paiements["Année"] == annee_choisie)
-                for m in MOIS: df_paiements.loc[masque, m] = row[m]
-            df_paiements.to_csv(FICHIER_PAIEMENTS, index=False)
-            st.success("تم الحفظ!")
-
-elif menu == "📌 Suivi des Passages (الحصص)":
-    st.header("📌 Suivi des Passages par Mois (تتبع الحصص بالشهر)")
-    st.info("💡 يمكنك تتبع الحصص مع الأخذ بعين الاعتبار تاريخ بداية العقد لكل إقامة.")
-    col_m1, col_m2 = st.columns(2)
-    with col_m1: mois_selectionne = st.selectbox("📅 اختار الشهر:", MOIS)
-    with col_m2: annee_selectionnee = st.selectbox("📆 اختار السنة:", [ANNEE_ACTUELLE, ANNEE_ACTUELLE - 1, ANNEE_ACTUELLE + 1])
-    
-    synchroniser_passages_par_mois(mois_selectionne, annee_selectionnee)
-    
-    if os.path.exists(FICHIER_PASSAGES):
-        df_pass = pd.read_csv(FICHIER_PASSAGES)
-        df_p_filtre = df_pass[(df_pass["Mois"] == mois_selectionne) & (df_pass["Année"] == annee_selectionnee)].copy()
-        
-        # إضافة تاريخ البداية في جدول الحصص للوضوح
-        if os.path.exists(FICHIER_DONNEES):
-            df_c = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-            if "Date de debut" in df_c.columns:
-                df_p_filtre = pd.merge(df_p_filtre, df_c[["Résidence", "Date de debut"]], on="Résidence", how="left")
+        for index, row in df_clients.iterrows():
+            client = row["Résidence"]
+            services = str(row.get("Services", ""))
+            
+            cible = 8 if "2 fois" in services.lower() else 4
+            
+            passages_non_payes = df_hist[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente")]
+            nb = len(passages_non_payes)
+            
+            with st.expander(f"🏢 {client} - العداد: {nb} / {cible} حصص", expanded=(nb >= cible)):
+                st.progress(min(nb / cible, 1.0))
                 
-        df_p_afficher = df_p_filtre.drop(columns=["Mois", "Année"])
-        df_p_afficher.index = range(1, len(df_p_afficher) + 1)
-        
-        if not df_p_afficher.empty:
-            options_etat = ["❌ Non fait", "✅ Fait", "N/A"]
-            config_p = {
-                "Escalier_1": st.column_config.SelectboxColumn("دروج (حصة 1)", options=options_etat, required=True),
-                "Escalier_2": st.column_config.SelectboxColumn("دروج (حصة 2)", options=options_etat, required=True),
-                "Escalier_3": st.column_config.SelectboxColumn("دروج (حصة 3)", options=options_etat, required=True),
-                "Escalier_4": st.column_config.SelectboxColumn("دروج (حصة 4)", options=options_etat, required=True),
-                "Terrasse": st.column_config.SelectboxColumn("الترّاس", options=options_etat, required=True),
-                "Sous_Sol": st.column_config.SelectboxColumn("السوسول / الباركينغ", options=options_etat, required=True),
-            }
-            df_p_modifie = st.data_editor(df_p_afficher, use_container_width=True, hide_index=False, column_config=config_p, disabled=["Résidence", "Date de debut"])
-            if st.button("💾 Enregistrer les Passages"):
-                for index, row in df_p_modifie.iterrows():
-                    residence = row["Résidence"]
-                    masque = (df_pass["Résidence"] == residence) & (df_pass["Mois"] == mois_selectionne) & (df_pass["Année"] == annee_selectionnee)
-                    df_pass.loc[masque, "Escalier_1"] = row["Escalier_1"]
-                    df_pass.loc[masque, "Escalier_2"] = row["Escalier_2"]
-                    df_pass.loc[masque, "Escalier_3"] = row["Escalier_3"]
-                    df_pass.loc[masque, "Escalier_4"] = row["Escalier_4"]
-                    df_pass.loc[masque, "Terrasse"] = row["Terrasse"]
-                    df_pass.loc[masque, "Sous_Sol"] = row["Sous_Sol"]
-                df_pass.to_csv(FICHIER_PASSAGES, index=False)
-                st.success("✅ تم حفظ الحصص بنجاح!")
+                if nb > 0:
+                    st.write("**تفاصيل الحصص المنجزة حالياً:**")
+                    df_show = passages_non_payes[["Date", "Employé", "Tâches"]].copy()
+                    st.dataframe(df_show, hide_index=True, use_container_width=True)
+                else:
+                    st.info("العداد مصفر (0 حصص). إما عاد بداو الدورة الجديدة أو كلشي مخلص.")
+                    
+                if nb >= cible:
+                    st.error(f"⚠️ الإقامة كملات {nb} حصص. حان وقت استخلاص الفاتورة!")
+                    if st.button(f"💰 لقد استلمت الدفعة! (تأكيد الخلاص وتصفير العداد لـ {client})", key=f"pay_{client}"):
+                        df_hist.loc[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente"), "Statut"] = "Payé"
+                        df_hist.to_csv(FICHIER_HISTORIQUE, index=False)
+                        st.success(f"تم تسجيل الخلاص بنجاح! العداد رجع للزيرو بالنسبة لـ {client}.")
+                        st.rerun()
 
 elif menu == "📄 Générer Reçu (Facture)":
     st.header("📄 Générer un Reçu de Paiement (PDF)")
-    if os.path.exists(FICHIER_DONNEES):
-        df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
-        if not df.empty:
-            col1, col2 = st.columns(2)
-            with col1: client_choisi = st.selectbox("اختار الكليان (Résidence):", df["Résidence"].tolist())
-            with col2: mois_paiement = st.selectbox("شهر الأداء (Mois):", MOIS)
-            client_info = df[df["Résidence"] == client_choisi].iloc[0]
-            if st.button("🛠️ Créer le Reçu (توليد PDF)"):
-                pdf = FPDF()
-                pdf.add_page()
-                if os.path.exists("logo.png"): pdf.image("logo.png", 10, 8, 40)
-                elif os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 40)
-                elif os.path.exists("logo.jpeg"): pdf.image("logo.jpeg", 10, 8, 40)
-                pdf.set_font("Arial", 'B', 16)
-                pdf.cell(80)
-                pdf.cell(30, 20, 'RECU DE PAIEMENT', 0, 1, 'C')
-                pdf.ln(15)
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 8, "IMMOCLEAN FACILITY", 0, 1)
-                pdf.set_font("Arial", '', 10)
-                pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
-                date_actuelle = datetime.datetime.now().strftime('%Y-%m-%d')
-                pdf.cell(0, 5, f"Date de generation : {date_actuelle}", 0, 1)
-                pdf.ln(10)
-                pdf.set_font("Arial", 'B', 12)
-                pdf.set_fill_color(225, 245, 254)
-                pdf.cell(0, 8, " INFORMATIONS DU CLIENT", 0, 1, 'L', 1)
-                pdf.set_font("Arial", '', 11)
-                residence_str = str(client_info['Résidence']).encode('latin-1', 'replace').decode('latin-1')
-                responsable_str = str(client_info['Responsable']).encode('latin-1', 'replace').decode('latin-1')
-                pdf.cell(0, 8, f"Residence : {residence_str}", 0, 1)
-                pdf.cell(0, 8, f"Responsable (Syndic) : {responsable_str}", 0, 1)
-                pdf.cell(0, 8, f"Mois regle : {mois_paiement} {ANNEE_ACTUELLE}", 0, 1)
-                pdf.ln(5)
-                pdf.set_font("Arial", 'B', 14)
-                pdf.cell(0, 12, f"MONTANT PAYE : {client_info['Prix (MAD)']} MAD", 1, 1, 'C')
-                pdf.ln(20)
-                pdf.set_font("Arial", 'I', 10)
-                pdf.cell(0, 10, "L'equipe ImmoClean Facility vous remercie pour votre confiance.", 0, 1, 'C')
-                nom_fichier_pdf = f"Recu_{client_choisi.replace(' ', '_')}_{mois_paiement}.pdf"
-                pdf.output(nom_fichier_pdf)
-                with open(nom_fichier_pdf, "rb") as pdf_file:
-                    st.success("✅ تم تجهيز التوصيل بنجاح!")
-                    st.download_button(label="📥 Télécharger le Reçu", data=pdf_file, file_name=nom_fichier_pdf, mime="application/pdf")
+    df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+    if not df.empty:
+        col1, col2 = st.columns(2)
+        with col1: client_choisi = st.selectbox("اختار الكليان (Résidence):", df["Résidence"].tolist())
+        with col2: motif_paiement = st.text_input("سبب الأداء أو الشهر (مثلا: Octobre 2026):", f"Reglement mensuel / Passages")
+        client_info = df[df["Résidence"] == client_choisi].iloc[0]
+        
+        if st.button("🛠️ Créer le Reçu (توليد PDF)"):
+            pdf = FPDF()
+            pdf.add_page()
+            if os.path.exists("logo.png"): pdf.image("logo.png", 10, 8, 40)
+            elif os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 40)
+            elif os.path.exists("logo.jpeg"): pdf.image("logo.jpeg", 10, 8, 40)
+            pdf.set_font("Arial", 'B', 16)
+            pdf.cell(80)
+            pdf.cell(30, 20, 'RECU DE PAIEMENT', 0, 1, 'C')
+            pdf.ln(15)
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 8, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
+            pdf.set_font("Arial", '', 10)
+            pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
+            date_actuelle = datetime.datetime.now().strftime('%Y-%m-%d')
+            pdf.cell(0, 5, f"Date de generation : {date_actuelle}", 0, 1)
+            pdf.ln(10)
+            
+            # 1. معلومات الكليان
+            pdf.set_font("Arial", 'B', 12)
+            pdf.set_fill_color(225, 245, 254)
+            pdf.cell(0, 8, " INFORMATIONS DU CLIENT", 0, 1, 'L', 1)
+            pdf.set_font("Arial", '', 11)
+            residence_str = str(client_info['Résidence']).encode('latin-1', 'replace').decode('latin-1')
+            responsable_str = str(client_info['Responsable']).encode('latin-1', 'replace').decode('latin-1')
+            pdf.cell(0, 8, f"Residence : {residence_str}", 0, 1)
+            pdf.cell(0, 8, f"Responsable (Syndic) : {responsable_str}", 0, 1)
+            motif_str = motif_paiement.encode('latin-1', 'replace').decode('latin-1')
+            pdf.cell(0, 8, f"Motif du reglement : {motif_str}", 0, 1)
+            pdf.ln(5)
+            
+            # 2. طابلو الحصص (Detail des passages)
+            pdf.set_font("Arial", 'B', 11)
+            pdf.set_fill_color(240, 240, 240)
+            pdf.cell(0, 8, " DETAILS DES INTERVENTIONS (HISTORIQUE)", 0, 1, 'L', 1)
+            
+            pdf.set_font("Arial", 'B', 9)
+            pdf.cell(30, 7, "Date", 1, 0, 'C')
+            pdf.cell(45, 7, "Employe", 1, 0, 'C')
+            pdf.cell(115, 7, "Taches effectuees", 1, 1, 'C')
+            
+            df_hist = pd.read_csv(FICHIER_HISTORIQUE)
+            passages_client = df_hist[df_hist["Résidence"] == client_choisi]
+            passages_en_attente = passages_client[passages_client["Statut"] == "En attente"]
+            
+            if passages_en_attente.empty:
+                cible = 8 if "2 fois" in str(client_info.get("Services", "")).lower() else 4
+                passages_a_afficher = passages_client.tail(cible)
+            else:
+                passages_a_afficher = passages_en_attente
+                
+            pdf.set_font("Arial", '', 9)
+            if not passages_a_afficher.empty:
+                for _, p_row in passages_a_afficher.iterrows():
+                    date_p = str(p_row['Date'])
+                    emp_p = str(p_row['Employé']).encode('latin-1', 'replace').decode('latin-1')[:20]
+                    
+                    # الحل النهائي: تنظيف أي حرف عربي لضمان عدم ظهور علامات الاستفهام ????
+                    tach_cleaned = re.sub(r'[^\x00-\x7F]+', '', str(p_row['Tâches']))
+                    tach_cleaned = tach_cleaned.replace('()', '').replace('( )', '').strip(' +')
+                    if tach_cleaned == "":
+                        tach_cleaned = "Non specifie"
+                    tach_p = tach_cleaned.encode('latin-1', 'replace').decode('latin-1')[:65]
+                    
+                    pdf.cell(30, 7, date_p, 1, 0, 'C')
+                    pdf.cell(45, 7, emp_p, 1, 0, 'C')
+                    pdf.cell(115, 7, tach_p, 1, 1, 'L')
+            else:
+                pdf.cell(190, 7, "Aucun passage recemment enregistre.", 1, 1, 'C')
+                
+            pdf.ln(10)
+            
+            # 3. المبلغ الإجمالي
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 12, f"MONTANT PAYE : {client_info['Prix (MAD)']} MAD", 1, 1, 'C')
+            pdf.ln(20)
+            pdf.set_font("Arial", 'I', 10)
+            pdf.cell(0, 10, "L'equipe ImmoClean Facility vous remercie pour votre confiance.", 0, 1, 'C')
+            nom_fichier_pdf = f"Recu_{client_choisi.replace(' ', '_')}.pdf"
+            pdf.output(nom_fichier_pdf)
+            with open(nom_fichier_pdf, "rb") as pdf_file:
+                st.success("✅ تم تجهيز التوصيل بنجاح! طابلو الحصص تضاف للفاكتورة.")
+                st.download_button(label="📥 Télécharger le Reçu", data=pdf_file, file_name=nom_fichier_pdf, mime="application/pdf")
 
 elif menu == "👥 Gestion de l'Équipe":
     st.header("👥 Gestion de l'Équipe")
@@ -304,43 +294,39 @@ elif menu == "👥 Gestion de l'Équipe":
                         chemin_photo = f"photos_employes/{nom_emp.replace(' ', '_')}.png"
                         with open(chemin_photo, "wb") as f: f.write(photo_emp.getbuffer())
                     nv_employe = pd.DataFrame({"Nom": [nom_emp], "Téléphone": [str(tel_emp)], "Poste": [poste_emp], "Photo": [chemin_photo]})
-                    if os.path.exists(FICHIER_EMPLOYES): 
-                        df_emp_ex = pd.read_csv(FICHIER_EMPLOYES, dtype={"Téléphone": str})
-                        df_emp_final = pd.concat([df_emp_ex, nv_employe], ignore_index=True)
-                        df_emp_final.to_csv(FICHIER_EMPLOYES, index=False)
-                    else: 
-                        nv_employe.to_csv(FICHIER_EMPLOYES, index=False)
+                    df_emp_ex = pd.read_csv(FICHIER_EMPLOYES, dtype={"Téléphone": str})
+                    df_emp_final = pd.concat([df_emp_ex, nv_employe], ignore_index=True)
+                    df_emp_final.to_csv(FICHIER_EMPLOYES, index=False)
                     st.success("تمت إضافة العامل بنجاح!")
                     st.rerun()
                 else: st.warning("الاسم ضروري.")
     st.markdown("### 📋 Liste de l'équipe")
-    if os.path.exists(FICHIER_EMPLOYES):
-        df_emp = pd.read_csv(FICHIER_EMPLOYES, dtype={"Téléphone": str})
-        cols = st.columns(4)
-        for index, row in df_emp.iterrows():
-            with cols[index % 4]:
-                st.markdown(f"**{row['Nom']}**")
-                st.caption(f"{row['Poste']}")
-                photo_path = str(row['Photo'])
-                if pd.notna(photo_path) and photo_path != "" and os.path.exists(photo_path):
-                    st.image(photo_path, width=100)
-                else:
-                    st.info("Pas de photo")
-                st.write(f"📞 {row['Téléphone']}")
-                st.markdown("---")
+    df_emp = pd.read_csv(FICHIER_EMPLOYES, dtype={"Téléphone": str})
+    cols = st.columns(4)
+    for index, row in df_emp.iterrows():
+        with cols[index % 4]:
+            st.markdown(f"**{row['Nom']}**")
+            st.caption(f"{row['Poste']}")
+            photo_path = str(row['Photo'])
+            if pd.notna(photo_path) and photo_path != "" and os.path.exists(photo_path):
+                st.image(photo_path, width=100)
+            else:
+                st.info("Pas de photo")
+            st.write(f"📞 {row['Téléphone']}")
+            st.markdown("---")
 
 elif menu == "📅 Planning Hebdomadaire":
     st.header("📅 Planning de la semaine (برنامج الأسبوع)")
-    if not os.path.exists(FICHIER_EMPLOYES) or not os.path.exists(FICHIER_DONNEES):
+    df_emp = pd.read_csv(FICHIER_EMPLOYES)
+    df_clients = pd.read_csv(FICHIER_DONNEES)
+    if df_emp.empty or df_clients.empty:
         st.warning("خاصك تدخل الكليان والعمال.")
     else:
-        df_emp = pd.read_csv(FICHIER_EMPLOYES)
         femmes_menage = df_emp[df_emp["Poste"] == "Femme de ménage"]["Nom"].tolist()
         if not femmes_menage:
             st.info("ما كاينا حتى 'Femme de ménage'.")
         else:
             employe_choisie = st.selectbox("👩‍🔧 اختار العاملة:", femmes_menage)
-            df_clients = pd.read_csv(FICHIER_DONNEES)
             tous_clients = df_clients["Résidence"].tolist()
             if not os.path.exists(FICHIER_PLANNING):
                 pd.DataFrame(columns=["Employe", "Jour", "Slot1", "Slot2", "Slot3"]).to_csv(FICHIER_PLANNING, index=False)
@@ -385,7 +371,7 @@ elif menu == "📅 Planning Hebdomadaire":
                                 v3 = row_actuel["Slot3"].values[0] if pd.notna(row_actuel["Slot3"].values[0]) else ""
                         dispo_v1 = [""] + [c for c in tous_clients if c not in clients_deja_assignes or c == v1]
                         dispo_v2 = [""] + [c for c in tous_clients if c not in clients_deja_assignes or c == v2]
-                        dispo_v3 = [""] + [c for c in tous_clients if c not in clients_deja_issignes or c == v3] if False else [""] + [c for c in tous_clients if c not in clients_deja_assignes or c == v3]
+                        dispo_v3 = [""] + [c for c in tous_clients if c not in clients_deja_assignes or c == v3]
                         s1 = st.selectbox("1️⃣", options=dispo_v1, index=dispo_v1.index(v1) if v1 in dispo_v1 else 0, key=f"{jour}_1_b")
                         s2 = st.selectbox("2️⃣", options=dispo_v2, index=dispo_v2.index(v2) if v2 in dispo_v2 else 0, key=f"{jour}_2_b")
                         s3 = st.selectbox("3️⃣", options=dispo_v3, index=dispo_v3.index(v3) if v3 in dispo_v3 else 0, key=f"{jour}_3_b")
@@ -397,8 +383,7 @@ elif menu == "📅 Planning Hebdomadaire":
                     for jour in jours:
                         nouvelles_lignes.append({
                             "Employe": employe_choisie, "Jour": jour,
-                            "Slot1": selections[jour][0], "Seq2": selections[jour][1] if False else selections[jour][1],
-                            "Slot2": selections[jour][1], "Slot3": selections[jour][2]
+                            "Slot1": selections[jour][0], "Slot2": selections[jour][1], "Slot3": selections[jour][2]
                         })
                     df_plan = pd.concat([df_plan, pd.DataFrame(nouvelles_lignes)], ignore_index=True)
                     df_plan.to_csv(FICHIER_PLANNING, index=False)
