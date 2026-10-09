@@ -182,12 +182,17 @@ elif menu == "Gérer les clients":
             n_secteur = st.text_input("Secteur", value=str(client_info.get("Secteur", "")))
             n_resp = st.text_input("Responsable (Syndic)", value=str(client_info["Responsable"]))
             n_tel = st.text_input("Téléphone", value=str(client_info["Téléphone"]))
-            n_prix = st.number_input("Prix (MAD)", value=float(client_info["Prix (MAD)"]))
+            n_prix = st.number_input("Prix (MAD)", value=float(client_info.get("Prix (MAD)", 0.0)))
+            
             if st.form_submit_button("💾 Enregistrer"):
+                # هاد السطر هو اللي غيفك المشكل ديال الأنواع (LossySetitemError)
+                df = df.astype(object)
+                
                 df.loc[df["Résidence"] == client_choisi, "Secteur"] = str(n_secteur)
                 df.loc[df["Résidence"] == client_choisi, "Responsable"] = str(n_resp)
                 df.loc[df["Résidence"] == client_choisi, "Téléphone"] = str(n_tel)
                 df.loc[df["Résidence"] == client_choisi, "Prix (MAD)"] = float(n_prix)
+                
                 save_data("Clients", df)
                 st.success("تم التعديل بنجاح في Google Sheets!")
                 st.rerun()
