@@ -3,61 +3,58 @@ import pandas as pd
 import os
 import datetime
 import re
+import json
+import gspread
+from gspread_dataframe import set_with_dataframe
 from fpdf import FPDF
 from streamlit_option_menu import option_menu
 
 st.set_page_config(page_title="ImmoClean ERP", page_icon="🏢", layout="wide")
 
-# --- كود الديزاين (CSS) المضيء والنقي (Light Theme) ---
+# --- كود الديزاين (CSS) النقي والمضيء ---
 st.markdown("""
 <style>
-    /* لون خلفية التطبيق - رمادي فاتح جدا ومريح */
-    .stApp {
-        background-color: #f8f9fa;
-    }
-    
-    /* تزيين المربعات ديال الأرقام (Metrics) */
-    div[data-testid="stMetric"] {
-        background-color: white;
-        border-left: 5px solid #1E88E5;
-        padding: 15px 20px;
-        border-radius: 10px;
-        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.05);
-    }
-    
-    /* ألوان العناوين */
-    h1, h2, h3 {
-        color: #0b3d91 !important;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
+    .stApp { background-color: #f8f9fa; }
+    div[data-testid="stMetric"] { background-color: white; border-left: 5px solid #1E88E5; padding: 15px 20px; border-radius: 10px; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.05); }
+    h1, h2, h3 { color: #0b3d91 !important; font-family: 'Segoe UI', Tahoma, sans-serif; }
 </style>
 """, unsafe_allow_html=True)
 
-os.makedirs("photos_employes", exist_ok=True)
-FICHIER_DONNEES = "clients.csv"
-FICHIER_EMPLOYES = "employes.csv"
-FICHIER_PLANNING = "planning.csv"
-FICHIER_HISTORIQUE = "historique_passages.csv"
-FICHIER_FINANCES = "finances.csv"
+# --- 🚀 الاتصال بقاعدة البيانات (Google Sheets) 🚀 ---
+@st.cache_resource
+def init_gsheets():
+    try:
+        creds_dict = json.loads(st.secrets["google_json"])
+        gc = gspread.service_account_from_dict(creds_dict)
+        sh = gc.open("ImmoClean_Data")
+        return sh
+    except Exception as e:
+        st.error("⚠️ خطأ في الاتصال بـ Google Sheets. تأكد بلي قاديتي Secrets مزيان وعطيتي الصلاحية للإيميل.")
+        st.stop()
 
-# التحقق من الملفات وتحديثها إذا لزم الأمر
-if not os.path.exists(FICHIER_DONNEES):
-    pd.DataFrame(columns=["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix (MAD)", "Jour de paiement"]).to_csv(FICHIER_DONNEES, index=False)
-if not os.path.exists(FICHIER_HISTORIQUE):
-    pd.DataFrame(columns=["Date", "Résidence", "Employé", "Tâches", "Statut"]).to_csv(FICHIER_HISTORIQUE, index=False)
-else:
-    df_hist_verif = pd.read_csv(FICHIER_HISTORIQUE)
-    if "Tâches" not in df_hist_verif.columns:
-        df_hist_verif.insert(3, "Tâches", "Non spécifié")
-        df_hist_verif.to_csv(FICHIER_HISTORIQUE, index=False)
+sh = init_gsheets()
 
-if not os.path.exists(FICHIER_EMPLOYES):
-    pd.DataFrame(columns=["Nom", "Téléphone", "Poste", "Photo"]).to_csv(FICHIER_EMPLOYES, index=False)
+# --- دوال جلب وحفظ البيانات ---
+def load_data(sheet_name, columns):
+    ws = sh.worksheet(sheet_name)
+    records = ws.get_all_records()
+    if not records:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(records)
 
-if not os.path.exists(FICHIER_FINANCES):
-    pd.DataFrame(columns=["Date", "Type", "Categorie", "Montant (MAD)", "Description"]).to_csv(FICHIER_FINANCES, index=False)
+def save_data(sheet_name, df):
+    ws = sh.worksheet(sheet_name)
+    ws.clear()
+    set_with_dataframe(ws, df)
 
-# --- القائمة الجانبية العصرية (Menu Moderne) ---
+# --- أسماء الأعمدة في كل ورقة ---
+COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix (MAD)", "Jour de paiement"]
+COLS_HIST = ["Date", "Résidence", "Employé", "Tâches", "Statut"]
+COLS_EMP = ["Nom", "Téléphone", "Poste", "Photo"]
+COLS_FIN = ["Date", "Type", "Categorie", "Montant (MAD)", "Description"]
+COLS_PLAN = ["Employe", "Jour", "Slot1", "Slot2", "Slot3"]
+
+# --- القائمة الجانبية (Menu Moderne) ---
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
     elif os.path.exists("logo.jpg"): st.image("logo.jpg", use_container_width=True)
@@ -91,16 +88,16 @@ with st.sidebar:
         }
     )
 
-st.title("ImmoClean FACILITY 🏢")
+st.title("ImmoClean FACILITY 🏢 (Sync: Google Sheets 🟢)")
 
 # --- 1. Tableau de bord ---
 if menu == "Tableau de bord":
     st.header("📊 Tableau de bord (نظرة عامة)")
     
-    df_clients = pd.read_csv(FICHIER_DONNEES)
-    df_emp = pd.read_csv(FICHIER_EMPLOYES)
-    df_hist = pd.read_csv(FICHIER_HISTORIQUE)
-    df_fin = pd.read_csv(FICHIER_FINANCES)
+    df_clients = load_data("Clients", COLS_CLIENTS)
+    df_emp = load_data("Employes", COLS_EMP)
+    df_hist = load_data("Historique", COLS_HIST)
+    df_fin = load_data("Finances", COLS_FIN)
     
     total_clients = len(df_clients) if not df_clients.empty else 0
     total_employes = len(df_emp) if not df_emp.empty else 0
@@ -119,8 +116,8 @@ if menu == "Tableau de bord":
             if passages_non_payes >= cible:
                 residences_a_facturer += 1
 
-    total_revenus = df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"].sum() if not df_fin.empty else 0
-    total_depenses = df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"].sum() if not df_fin.empty else 0
+    total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
+    total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     solde_net = total_revenus - total_depenses
     
     col1, col2, col3, col4 = st.columns(4)
@@ -141,7 +138,7 @@ elif menu == "Nouveau Client":
     st.header("➕ Ajouter un nouveau client")
     with st.form("form_client"):
         residence = st.text_input("Nom de la résidence / Client")
-        secteur = st.text_input("Secteur Géographique (ex: Centre Ville, Maamora...)")
+        secteur = st.text_input("Secteur Géographique")
         responsable = st.text_input("Nom du responsable (Syndic)")
         telephone = st.text_input("Téléphone")
         
@@ -167,15 +164,15 @@ elif menu == "Nouveau Client":
                     "Téléphone": [str(telephone)], "Services": [" + ".join(services_choisis)], 
                     "Produits": [produit], "Prix (MAD)": [prix], "Jour de paiement": [jour_paiement]
                 })
-                df_existant = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+                df_existant = load_data("Clients", COLS_CLIENTS)
                 df_final = pd.concat([df_existant, nouveau], ignore_index=True)
-                df_final.to_csv(FICHIER_DONNEES, index=False)
-                st.success(f"Le client {residence} a été ajouté avec succès !")
+                save_data("Clients", df_final)
+                st.success(f"تمت الإضافة بنجاح في Google Sheets 🟢")
 
 # --- 3. Gérer les clients ---
 elif menu == "Gérer les clients":
     st.header("✏️ Modifier ou Supprimer un client")
-    df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+    df = load_data("Clients", COLS_CLIENTS)
     if not df.empty:
         client_choisi = st.selectbox("اختار الكليان اللي بغيتي تعدل أو تمسح:", df["Résidence"].tolist())
         client_info = df[df["Résidence"] == client_choisi].iloc[0]
@@ -189,22 +186,23 @@ elif menu == "Gérer les clients":
                 df.loc[df["Résidence"] == client_choisi, "Responsable"] = str(n_resp)
                 df.loc[df["Résidence"] == client_choisi, "Téléphone"] = str(n_tel)
                 df.loc[df["Résidence"] == client_choisi, "Prix (MAD)"] = float(n_prix)
-                df.to_csv(FICHIER_DONNEES, index=False)
-                st.success("تم التعديل بنجاح!")
+                save_data("Clients", df)
+                st.success("تم التعديل بنجاح في Google Sheets 🟢")
                 st.rerun()
         st.markdown("---")
         if st.button("❌ Supprimer le client"):
-            df[df["Résidence"] != client_choisi].to_csv(FICHIER_DONNEES, index=False)
-            st.success("تم مسح الكليان!")
+            df_new = df[df["Résidence"] != client_choisi]
+            save_data("Clients", df_new)
+            st.success("تم مسح الكليان من قاعدة البيانات 🟢")
             st.rerun()
 
 # --- 4. Pointage & Paiements ---
 elif menu == "Pointage & Paiements":
     st.header("🔄 Pointage et Cycle de Paiement الذكي")
     
-    df_clients = pd.read_csv(FICHIER_DONNEES)
-    df_emp = pd.read_csv(FICHIER_EMPLOYES)
-    df_hist = pd.read_csv(FICHIER_HISTORIQUE)
+    df_clients = load_data("Clients", COLS_CLIENTS)
+    df_emp = load_data("Employes", COLS_EMP)
+    df_hist = load_data("Historique", COLS_HIST)
     
     if df_clients.empty or df_emp.empty:
         st.warning("⚠️ خصك ضروري تدخل الكليان والعمال باش تقدر تسجل الحصص.")
@@ -237,8 +235,8 @@ elif menu == "Pointage & Paiements":
                     "Employé": [emp_choisi], "Tâches": [taches_str], "Statut": ["En attente"]
                 })
                 df_hist = pd.concat([df_hist, nv_passage], ignore_index=True)
-                df_hist.to_csv(FICHIER_HISTORIQUE, index=False)
-                st.success("تم تسجيل الحصة بنجاح!")
+                save_data("Historique", df_hist)
+                st.success("تم تسجيل الحصة بنجاح 🟢")
                 st.rerun()
 
         st.markdown("---")
@@ -268,9 +266,9 @@ elif menu == "Pointage & Paiements":
                     st.error(f"⚠️ الإقامة كملات {nb} حصص. حان وقت استخلاص الفاتورة!")
                     if st.button(f"💰 تأكيد الخلاص وتصفير العداد لـ {client}", key=f"pay_{client}"):
                         df_hist.loc[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente"), "Statut"] = "Payé"
-                        df_hist.to_csv(FICHIER_HISTORIQUE, index=False)
+                        save_data("Historique", df_hist)
                         
-                        df_fin_ex = pd.read_csv(FICHIER_FINANCES)
+                        df_fin_ex = load_data("Finances", COLS_FIN)
                         nv_recette = pd.DataFrame({
                             "Date": [str(datetime.date.today())],
                             "Type": ["Entrée (Revenu)"],
@@ -278,18 +276,19 @@ elif menu == "Pointage & Paiements":
                             "Montant (MAD)": [prix_client],
                             "Description": [f"Reglement de {client} ({nb} passages)"]
                         })
-                        pd.concat([df_fin_ex, nv_recette], ignore_index=True).to_csv(FICHIER_FINANCES, index=False)
+                        df_fin_final = pd.concat([df_fin_ex, nv_recette], ignore_index=True)
+                        save_data("Finances", df_fin_final)
                         
-                        st.success(f"تم تسجيل الخلاص وإضافة المبلغ ({prix_client} MAD) للمداخيل المالية بنجاح!")
+                        st.success(f"تم تسجيل الخلاص فالسجل المالي بنجاح 🟢")
                         st.rerun()
 
 # --- 5. Finances & Trésorerie ---
 elif menu == "Finances & Trésorerie":
     st.header("💰 Gestion Financière & Trésorerie (المالية والنفقات)")
     
-    df_fin = pd.read_csv(FICHIER_FINANCES)
-    total_rev = df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"].sum() if not df_fin.empty else 0
-    total_dep = df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"].sum() if not df_fin.empty else 0
+    df_fin = load_data("Finances", COLS_FIN)
+    total_rev = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
+    total_dep = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     net_solde = total_rev - total_dep
     
     col1, col2, col3 = st.columns(3)
@@ -313,8 +312,9 @@ elif menu == "Finances & Trésorerie":
                 st.warning("عافاك دخل مبلغ أكبر من الصفر.")
             else:
                 nv_op = pd.DataFrame({"Date": [str(date_operation)], "Type": [type_mouvement], "Categorie": [categorie], "Montant (MAD)": [montant], "Description": [description if description else "-"]})
-                pd.concat([df_fin, nv_op], ignore_index=True).to_csv(FICHIER_FINANCES, index=False)
-                st.success("تم تسجيل العملية المالية بنجاح!")
+                df_fin = pd.concat([df_fin, nv_op], ignore_index=True)
+                save_data("Finances", df_fin)
+                st.success("تم تسجيل العملية المالية في Google Sheets 🟢")
                 st.rerun()
                 
     st.markdown("---")
@@ -324,8 +324,8 @@ elif menu == "Finances & Trésorerie":
         df_fin_affiche.index = range(1, len(df_fin_affiche) + 1)
         st.dataframe(df_fin_affiche, use_container_width=True)
         if st.button("🗑️ مسح السجل المالي"):
-            pd.DataFrame(columns=["Date", "Type", "Categorie", "Montant (MAD)", "Description"]).to_csv(FICHIER_FINANCES, index=False)
-            st.success("تم مسح السجل المالي بنجاح!")
+            save_data("Finances", pd.DataFrame(columns=COLS_FIN))
+            st.success("تم مسح السجل المالي بنجاح 🟢")
             st.rerun()
     else:
         st.info("لا توجد أي معاملات مالية مسجلة حالياً.")
@@ -333,7 +333,7 @@ elif menu == "Finances & Trésorerie":
 # --- 6. Générer Reçu ---
 elif menu == "Générer Reçu":
     st.header("📄 Générer un Reçu de Paiement (PDF)")
-    df = pd.read_csv(FICHIER_DONNEES, dtype={"Téléphone": str})
+    df = load_data("Clients", COLS_CLIENTS)
     if not df.empty:
         col1, col2 = st.columns(2)
         with col1: client_choisi = st.selectbox("اختار الكليان (Résidence):", df["Résidence"].tolist())
@@ -377,7 +377,7 @@ elif menu == "Générer Reçu":
             pdf.cell(45, 7, "Employe", 1, 0, 'C')
             pdf.cell(115, 7, "Taches effectuees", 1, 1, 'C')
             
-            df_hist = pd.read_csv(FICHIER_HISTORIQUE)
+            df_hist = load_data("Historique", COLS_HIST)
             passages_client = df_hist[df_hist["Résidence"] == client_choisi]
             passages_en_attente = passages_client[passages_client["Statut"] == "En attente"]
             
@@ -425,34 +425,26 @@ elif menu == "Gestion d'Équipe":
             nom_emp = st.text_input("Nom complet")
             tel_emp = st.text_input("Téléphone")
             poste_emp = st.selectbox("Poste", ["Femme de ménage", "Superviseur", "Chauffeur", "Autre"])
-            photo_emp = st.file_uploader("Photo", type=["jpg", "jpeg", "png"])
+            photo_emp = st.file_uploader("Photo (مؤقتا معطلة في السحاب)", type=["jpg", "jpeg", "png"])
             if st.form_submit_button("Ajouter l'employé"):
                 if nom_emp:
-                    chemin_photo = ""
-                    if photo_emp is not None:
-                        chemin_photo = f"photos_employes/{nom_emp.replace(' ', '_')}.png"
-                        with open(chemin_photo, "wb") as f: f.write(photo_emp.getbuffer())
+                    chemin_photo = "" 
                     nv_employe = pd.DataFrame({"Nom": [nom_emp], "Téléphone": [str(tel_emp)], "Poste": [poste_emp], "Photo": [chemin_photo]})
-                    df_emp_ex = pd.read_csv(FICHIER_EMPLOYES, dtype={"Téléphone": str})
+                    df_emp_ex = load_data("Employes", COLS_EMP)
                     df_emp_final = pd.concat([df_emp_ex, nv_employe], ignore_index=True)
-                    df_emp_final.to_csv(FICHIER_EMPLOYES, index=False)
-                    st.success("تمت إضافة العامل بنجاح!")
+                    save_data("Employes", df_emp_final)
+                    st.success("تمت إضافة العامل بنجاح في Google Sheets 🟢")
                     st.rerun()
                 else: st.warning("الاسم ضروري.")
     
     st.markdown("### 📋 Liste de l'équipe")
-    df_emp = pd.read_csv(FICHIER_EMPLOYES, dtype={"Téléphone": str})
+    df_emp = load_data("Employes", COLS_EMP)
     if not df_emp.empty:
         cols = st.columns(4)
         for index, row in df_emp.iterrows():
             with cols[index % 4]:
                 st.markdown(f"**{row['Nom']}**")
                 st.caption(f"{row['Poste']}")
-                photo_path = str(row['Photo'])
-                if pd.notna(photo_path) and photo_path != "" and os.path.exists(photo_path):
-                    st.image(photo_path, width=100)
-                else:
-                    st.info("Pas de photo")
                 st.write(f"📞 {row['Téléphone']}")
                 st.markdown("---")
     else:
@@ -461,8 +453,8 @@ elif menu == "Gestion d'Équipe":
 # --- 8. Planning ---
 elif menu == "Planning":
     st.header("📅 Planning de la semaine (برنامج الأسبوع)")
-    df_emp = pd.read_csv(FICHIER_EMPLOYES)
-    df_clients = pd.read_csv(FICHIER_DONNEES)
+    df_emp = load_data("Employes", COLS_EMP)
+    df_clients = load_data("Clients", COLS_CLIENTS)
     if df_emp.empty or df_clients.empty:
         st.warning("خاصك تدخل الكليان والعمال أولاً.")
     else:
@@ -473,13 +465,7 @@ elif menu == "Planning":
             employe_choisie = st.selectbox("👩‍🔧 اختار العاملة:", femmes_menage)
             tous_clients = df_clients["Résidence"].tolist()
             
-            if not os.path.exists(FICHIER_PLANNING):
-                pd.DataFrame(columns=["Employe", "Jour", "Slot1", "Slot2", "Slot3"]).to_csv(FICHIER_PLANNING, index=False)
-            
-            df_plan = pd.read_csv(FICHIER_PLANNING)
-            for col in ["Slot1", "Slot2", "Slot3"]:
-                if col not in df_plan.columns:
-                    df_plan[col] = ""
+            df_plan = load_data("Planning", COLS_PLAN)
             
             st.markdown(f"#### برنامج العمل ديال: **<span style='color:#1E88E5;'>{employe_choisie}</span>**", unsafe_allow_html=True)
             jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
@@ -509,7 +495,6 @@ elif menu == "Planning":
                         
                         s1 = st.selectbox("حصة 1️⃣", options=dispo_v1, index=dispo_v1.index(v1) if v1 in dispo_v1 else 0, key=f"{jour}_1")
                         s2 = st.selectbox("حصة 2️⃣", options=dispo_v2, index=dispo_v2.index(v2) if v2 in dispo_v2 else 0, key=f"{jour}_2")
-                        
                         s3 = ""
                         if activer_slot_3 or v3 != "":
                             s3 = st.selectbox("حصة 3️⃣ (إضافية)", options=dispo_v3, index=dispo_v3.index(v3) if v3 in dispo_v3 else 0, key=f"{jour}_3")
@@ -538,7 +523,6 @@ elif menu == "Planning":
                         
                         s1 = st.selectbox("حصة 1️⃣", options=dispo_v1, index=dispo_v1.index(v1) if v1 in dispo_v1 else 0, key=f"{jour}_1_b")
                         s2 = st.selectbox("حصة 2️⃣", options=dispo_v2, index=dispo_v2.index(v2) if v2 in dispo_v2 else 0, key=f"{jour}_2_b")
-                        
                         s3 = ""
                         if activer_slot_3 or v3 != "":
                             s3 = st.selectbox("حصة 3️⃣ (إضافية)", options=dispo_v3, index=dispo_v3.index(v3) if v3 in dispo_v3 else 0, key=f"{jour}_3_b")
@@ -555,6 +539,6 @@ elif menu == "Planning":
                             "Slot1": selections[jour][0], "Slot2": selections[jour][1], "Slot3": selections[jour][2]
                         })
                     df_plan = pd.concat([df_plan, pd.DataFrame(nouvelles_lignes)], ignore_index=True)
-                    df_plan.to_csv(FICHIER_PLANNING, index=False)
-                    st.success("تم تسجيل البرنامج الأسبوعي بنجاح!")
+                    save_data("Planning", df_plan)
+                    st.success("تم تسجيل البرنامج الأسبوعي بنجاح في Google Sheets 🟢")
                     st.rerun()
