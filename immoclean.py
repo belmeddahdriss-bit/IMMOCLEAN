@@ -21,7 +21,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 🚀 الاتصال بقاعدة البيانات (Google Sheets) 🚀 ---
-@st.cache_resource
+# زدنا (ttl=60) باش السيرفر يمسح الذاكرة كل دقيقة ويجرب من جديد
+@st.cache_resource(ttl=60)
 def init_gsheets():
     try:
         creds_dict = json.loads(st.secrets["google_json"])
@@ -29,7 +30,8 @@ def init_gsheets():
         sh = gc.open("ImmoClean_Data")
         return sh
     except Exception as e:
-        st.error("⚠️ خطأ في الاتصال بـ Google Sheets. تأكد بلي قاديتي Secrets مزيان وعطيتي الصلاحية للإيميل.")
+        # هاد السطر هو اللي غيقول لينا المشكل الحقيقي بالإنجليزية
+        st.error(f"⚠️ هاهو المشكل التقني بالضبط: {e}")
         st.stop()
 
 sh = init_gsheets()
@@ -138,7 +140,7 @@ elif menu == "Nouveau Client":
     st.header("➕ Ajouter un nouveau client")
     with st.form("form_client"):
         residence = st.text_input("Nom de la résidence / Client")
-        secteur = st.text_input("Secteur Géographique")
+        secteur = st.text_input("Secteur Géographique (ex: Centre Ville, Maamora...)")
         responsable = st.text_input("Nom du responsable (Syndic)")
         telephone = st.text_input("Téléphone")
         
@@ -167,7 +169,7 @@ elif menu == "Nouveau Client":
                 df_existant = load_data("Clients", COLS_CLIENTS)
                 df_final = pd.concat([df_existant, nouveau], ignore_index=True)
                 save_data("Clients", df_final)
-                st.success(f"تمت الإضافة بنجاح في Google Sheets 🟢")
+                st.success(f"Le client {residence} a été ajouté avec succès dans Google Sheets !")
 
 # --- 3. Gérer les clients ---
 elif menu == "Gérer les clients":
@@ -187,13 +189,13 @@ elif menu == "Gérer les clients":
                 df.loc[df["Résidence"] == client_choisi, "Téléphone"] = str(n_tel)
                 df.loc[df["Résidence"] == client_choisi, "Prix (MAD)"] = float(n_prix)
                 save_data("Clients", df)
-                st.success("تم التعديل بنجاح في Google Sheets 🟢")
+                st.success("تم التعديل بنجاح في Google Sheets!")
                 st.rerun()
         st.markdown("---")
         if st.button("❌ Supprimer le client"):
             df_new = df[df["Résidence"] != client_choisi]
             save_data("Clients", df_new)
-            st.success("تم مسح الكليان من قاعدة البيانات 🟢")
+            st.success("تم مسح الكليان من قاعدة البيانات!")
             st.rerun()
 
 # --- 4. Pointage & Paiements ---
@@ -236,7 +238,7 @@ elif menu == "Pointage & Paiements":
                 })
                 df_hist = pd.concat([df_hist, nv_passage], ignore_index=True)
                 save_data("Historique", df_hist)
-                st.success("تم تسجيل الحصة بنجاح 🟢")
+                st.success("تم تسجيل الحصة بنجاح!")
                 st.rerun()
 
         st.markdown("---")
@@ -279,7 +281,7 @@ elif menu == "Pointage & Paiements":
                         df_fin_final = pd.concat([df_fin_ex, nv_recette], ignore_index=True)
                         save_data("Finances", df_fin_final)
                         
-                        st.success(f"تم تسجيل الخلاص فالسجل المالي بنجاح 🟢")
+                        st.success(f"تم تسجيل الخلاص وإضافة المبلغ للمداخيل بنجاح!")
                         st.rerun()
 
 # --- 5. Finances & Trésorerie ---
@@ -314,7 +316,7 @@ elif menu == "Finances & Trésorerie":
                 nv_op = pd.DataFrame({"Date": [str(date_operation)], "Type": [type_mouvement], "Categorie": [categorie], "Montant (MAD)": [montant], "Description": [description if description else "-"]})
                 df_fin = pd.concat([df_fin, nv_op], ignore_index=True)
                 save_data("Finances", df_fin)
-                st.success("تم تسجيل العملية المالية في Google Sheets 🟢")
+                st.success("تم تسجيل العملية المالية في Google Sheets!")
                 st.rerun()
                 
     st.markdown("---")
@@ -325,7 +327,7 @@ elif menu == "Finances & Trésorerie":
         st.dataframe(df_fin_affiche, use_container_width=True)
         if st.button("🗑️ مسح السجل المالي"):
             save_data("Finances", pd.DataFrame(columns=COLS_FIN))
-            st.success("تم مسح السجل المالي بنجاح 🟢")
+            st.success("تم مسح السجل المالي بنجاح!")
             st.rerun()
     else:
         st.info("لا توجد أي معاملات مالية مسجلة حالياً.")
@@ -425,15 +427,15 @@ elif menu == "Gestion d'Équipe":
             nom_emp = st.text_input("Nom complet")
             tel_emp = st.text_input("Téléphone")
             poste_emp = st.selectbox("Poste", ["Femme de ménage", "Superviseur", "Chauffeur", "Autre"])
-            photo_emp = st.file_uploader("Photo (مؤقتا معطلة في السحاب)", type=["jpg", "jpeg", "png"])
+            photo_emp = st.file_uploader("Photo", type=["jpg", "jpeg", "png"])
             if st.form_submit_button("Ajouter l'employé"):
                 if nom_emp:
-                    chemin_photo = "" 
+                    chemin_photo = "" # الصور فالسحاب غيحتاجو استضافة، دابا غنركزو على الداتا
                     nv_employe = pd.DataFrame({"Nom": [nom_emp], "Téléphone": [str(tel_emp)], "Poste": [poste_emp], "Photo": [chemin_photo]})
                     df_emp_ex = load_data("Employes", COLS_EMP)
                     df_emp_final = pd.concat([df_emp_ex, nv_employe], ignore_index=True)
                     save_data("Employes", df_emp_final)
-                    st.success("تمت إضافة العامل بنجاح في Google Sheets 🟢")
+                    st.success("تمت إضافة العامل بنجاح في قاعدة البيانات!")
                     st.rerun()
                 else: st.warning("الاسم ضروري.")
     
@@ -540,5 +542,5 @@ elif menu == "Planning":
                         })
                     df_plan = pd.concat([df_plan, pd.DataFrame(nouvelles_lignes)], ignore_index=True)
                     save_data("Planning", df_plan)
-                    st.success("تم تسجيل البرنامج الأسبوعي بنجاح في Google Sheets 🟢")
+                    st.success("تم تسجيل البرنامج الأسبوعي بنجاح في Google Sheets!")
                     st.rerun()
