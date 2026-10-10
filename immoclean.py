@@ -380,17 +380,23 @@ elif menu == "Générer Reçu":
             elif os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 40)
             elif os.path.exists("logo.jpeg"): pdf.image("logo.jpeg", 10, 8, 40)
             elif os.path.exists("logo.webp"): pdf.image("logo.webp", 10, 8, 40)
+            
             pdf.set_font("Arial", 'B', 16)
             pdf.cell(80)
             pdf.cell(30, 20, 'RECU DE PAIEMENT', 0, 1, 'C')
             
-            # زدت مسافة كبيرة هنا باش المعلومات ميتخلطوش مع اللوگو
+            # مسافة تحت اللوگو
             pdf.ln(25) 
             
+            # --- المعلومات القانونية للشركة (Reçu) ---
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 8, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
+            pdf.cell(0, 6, "IMMOCLEAN FACILITY", 0, 1)
             pdf.set_font("Arial", '', 10)
+            pdf.cell(0, 5, "Adresse : Kenitra, Maroc", 0, 1)
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
+            pdf.cell(0, 5, "Email : contact@immoclean.ma", 0, 1)
+            pdf.cell(0, 5, "ICE : [VOTRE ICE] | RC : [VOTRE RC]", 0, 1)
+            
             date_actuelle = datetime.datetime.now().strftime('%Y-%m-%d')
             pdf.cell(0, 5, f"Date de generation : {date_actuelle}", 0, 1)
             pdf.ln(10)
@@ -503,15 +509,17 @@ elif menu == "Générer Devis":
             pdf.cell(80)
             pdf.cell(30, 20, 'DEVIS', 0, 1, 'C')
             
-            # زدت مسافة كبيرة هنا باش المعلومات ميتخلطوش مع اللوگو
+            # مسافة تحت اللوگو
             pdf.ln(25) 
             
-            # Company Info
+            # --- المعلومات القانونية للشركة (Devis) ---
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(0, 6, "IMMOCLEAN FACILITY", 0, 1)
             pdf.set_font("Arial", '', 10)
+            pdf.cell(0, 5, "Adresse : Kenitra, Maroc", 0, 1)
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
             pdf.cell(0, 5, "Email : contact@immoclean.ma", 0, 1)
+            pdf.cell(0, 5, "ICE : [VOTRE ICE] | RC : [VOTRE RC]", 0, 1)
             
             # Devis & Client Info
             pdf.ln(10)
