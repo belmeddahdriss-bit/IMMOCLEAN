@@ -423,7 +423,6 @@ elif menu == "Générer Reçu":
             with open(nom_fichier_pdf, "rb") as pdf_file:
                 st.success("✅ تم تجهيز التوصيل بنجاح!")
                 st.download_button(label="📥 Télécharger le Reçu", data=pdf_file, file_name=nom_fichier_pdf, mime="application/pdf")
-
 # --- 7. Gestion d'Équipe ---
 elif menu == "Gestion d'Équipe":
     st.header("👥 Gestion de l'Équipe")
@@ -433,16 +432,33 @@ elif menu == "Gestion d'Équipe":
             tel_emp = st.text_input("Téléphone")
             poste_emp = st.selectbox("Poste", ["Femme de ménage", "Superviseur", "Chauffeur", "Autre"])
             photo_emp = st.file_uploader("Photo", type=["jpg", "jpeg", "png"])
+            
             if st.form_submit_button("Ajouter l'employé"):
                 if nom_emp:
-                    chemin_photo = "" # الصور فالسحاب غيحتاجو استضافة، دابا غنركزو على الداتا
-                    nv_employe = pd.DataFrame({"Nom": [nom_emp], "Téléphone": [str(tel_emp)], "Poste": [poste_emp], "Photo": [chemin_photo]})
+                    # القالب ديال تحويل الصورة لنص (Base64) باش تقبلها جوجل شيت
+                    photo_b64 = ""
+                    if photo_emp is not None:
+                        try:
+                            from PIL import Image
+                            import io
+                            import base64
+                            img = Image.open(photo_emp)
+                            img.thumbnail((150, 150)) # تصغير الصورة باش ماتفوتش الحد
+                            img = img.convert("RGB") # تفادي مشكل الصور الشفافة
+                            buffered = io.BytesIO()
+                            img.save(buffered, format="JPEG")
+                            photo_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                        except Exception as e:
+                            st.warning("⚠️ وقع مشكل فرفع الصورة، غيتسجل العامل بلا بيها.")
+                            
+                    nv_employe = pd.DataFrame({"Nom": [nom_emp], "Téléphone": [str(tel_emp)], "Poste": [poste_emp], "Photo": [photo_b64]})
                     df_emp_ex = load_data("Employes", COLS_EMP)
                     df_emp_final = pd.concat([df_emp_ex, nv_employe], ignore_index=True)
                     save_data("Employes", df_emp_final)
                     st.success("تمت إضافة العامل بنجاح في قاعدة البيانات!")
                     st.rerun()
-                else: st.warning("الاسم ضروري.")
+                else: 
+                    st.warning("الاسم ضروري.")
     
     st.markdown("### 📋 Liste de l'équipe")
     df_emp = load_data("Employes", COLS_EMP)
@@ -450,12 +466,26 @@ elif menu == "Gestion d'Équipe":
         cols = st.columns(4)
         for index, row in df_emp.iterrows():
             with cols[index % 4]:
+                st.markdown("<div style='background-color:white; padding:15px; border-radius:10px; border:1px solid #e0e0e0; text-align:center;'>", unsafe_allow_html=True)
+                
+                # عرض الصورة إيلا كاينة
+                if pd.notna(row.get('Photo')) and str(row['Photo']).strip() != "":
+                    try:
+                        import base64
+                        img_bytes = base64.b64decode(str(row['Photo']))
+                        st.image(img_bytes, width=100)
+                    except:
+                        st.markdown("<h1>👤</h1>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<h1>👤</h1>", unsafe_allow_html=True)
+                    
                 st.markdown(f"**{row['Nom']}**")
                 st.caption(f"{row['Poste']}")
                 st.write(f"📞 {row['Téléphone']}")
-                st.markdown("---")
+                st.markdown("</div><br>", unsafe_allow_html=True)
     else:
         st.info("Aucun employé enregistré.")
+
 
 # --- 8. Planning ---
 elif menu == "Planning":
