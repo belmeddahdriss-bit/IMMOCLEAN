@@ -426,6 +426,8 @@ elif menu == "Générer Reçu":
 # --- 7. Gestion d'Équipe ---
 elif menu == "Gestion d'Équipe":
     st.header("👥 Gestion de l'Équipe")
+    
+    # 1. إضافة عامل جديد
     with st.expander("➕ Ajouter un employé"):
         with st.form("form_employe"):
             nom_emp = st.text_input("Nom complet")
@@ -435,7 +437,6 @@ elif menu == "Gestion d'Équipe":
             
             if st.form_submit_button("Ajouter l'employé"):
                 if nom_emp:
-                    # القالب ديال تحويل الصورة لنص (Base64) باش تقبلها جوجل شيت
                     photo_b64 = ""
                     if photo_emp is not None:
                         try:
@@ -443,8 +444,8 @@ elif menu == "Gestion d'Équipe":
                             import io
                             import base64
                             img = Image.open(photo_emp)
-                            img.thumbnail((150, 150)) # تصغير الصورة باش ماتفوتش الحد
-                            img = img.convert("RGB") # تفادي مشكل الصور الشفافة
+                            img.thumbnail((150, 150))
+                            img = img.convert("RGB")
                             buffered = io.BytesIO()
                             img.save(buffered, format="JPEG")
                             photo_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -460,15 +461,68 @@ elif menu == "Gestion d'Équipe":
                 else: 
                     st.warning("الاسم ضروري.")
     
-    st.markdown("### 📋 Liste de l'équipe")
     df_emp = load_data("Employes", COLS_EMP)
+    
+    # 2. تعديل أو مسح عامل (الإضافة الجديدة)
+    if not df_emp.empty:
+        with st.expander("✏️ Modifier ou Supprimer un employé"):
+            emp_choisi = st.selectbox("اختار العامل اللي بغيتي تعدل أو تمسح:", df_emp["Nom"].tolist())
+            emp_info = df_emp[df_emp["Nom"] == emp_choisi].iloc[0]
+            
+            with st.form("form_mod_emp"):
+                n_nom = st.text_input("Nom complet", value=str(emp_info["Nom"]))
+                n_tel = st.text_input("Téléphone", value=str(emp_info.get("Téléphone", "")))
+                
+                postes = ["Femme de ménage", "Superviseur", "Chauffeur", "Autre"]
+                current_poste = str(emp_info.get("Poste", "Autre"))
+                poste_idx = postes.index(current_poste) if current_poste in postes else 0
+                n_poste = st.selectbox("Poste", postes, index=poste_idx)
+                
+                n_photo = st.file_uploader("Photo (خليه خاوي إيلا مابغيتيش تبدل التصويرة القديمة)", type=["jpg", "jpeg", "png"])
+                
+                if st.form_submit_button("💾 Enregistrer les modifications"):
+                    df_emp = df_emp.astype(object) # باش نتفاداو مشكل الأنواع اللي وقع فديال الكليان
+                    
+                    df_emp.loc[df_emp["Nom"] == emp_choisi, "Nom"] = str(n_nom)
+                    df_emp.loc[df_emp["Nom"] == emp_choisi, "Téléphone"] = str(n_tel)
+                    df_emp.loc[df_emp["Nom"] == emp_choisi, "Poste"] = str(n_poste)
+                    
+                    if n_photo is not None:
+                        try:
+                            from PIL import Image
+                            import io
+                            import base64
+                            img = Image.open(n_photo)
+                            img.thumbnail((150, 150))
+                            img = img.convert("RGB")
+                            buffered = io.BytesIO()
+                            img.save(buffered, format="JPEG")
+                            n_photo_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                            df_emp.loc[df_emp["Nom"] == emp_choisi, "Photo"] = n_photo_b64
+                        except Exception as e:
+                            st.warning("⚠️ وقع مشكل فرفع الصورة الجديدة.")
+                            
+                    save_data("Employes", df_emp)
+                    st.success("تم تعديل معلومات العامل بنجاح!")
+                    st.rerun()
+            
+            # زر مسح العامل كليا
+            st.markdown("---")
+            if st.button("❌ Supprimer l'employé"):
+                df_emp_new = df_emp[df_emp["Nom"] != emp_choisi]
+                save_data("Employes", df_emp_new)
+                st.success("تم مسح العامل من قاعدة البيانات!")
+                st.rerun()
+    
+    # 3. عرض اللائحة ديال العمال
+    st.markdown("---")
+    st.markdown("### 📋 Liste de l'équipe")
     if not df_emp.empty:
         cols = st.columns(4)
         for index, row in df_emp.iterrows():
             with cols[index % 4]:
                 st.markdown("<div style='background-color:white; padding:15px; border-radius:10px; border:1px solid #e0e0e0; text-align:center;'>", unsafe_allow_html=True)
                 
-                # عرض الصورة إيلا كاينة
                 if pd.notna(row.get('Photo')) and str(row['Photo']).strip() != "":
                     try:
                         import base64
@@ -481,10 +535,11 @@ elif menu == "Gestion d'Équipe":
                     
                 st.markdown(f"**{row['Nom']}**")
                 st.caption(f"{row['Poste']}")
-                st.write(f"📞 {row['Téléphone']}")
+                st.write(f"📞 {row.get('Téléphone', '')}")
                 st.markdown("</div><br>", unsafe_allow_html=True)
     else:
         st.info("Aucun employé enregistré.")
+
 
 
 # --- 8. Planning ---
