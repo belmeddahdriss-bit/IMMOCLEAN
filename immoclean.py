@@ -388,14 +388,13 @@ elif menu == "Générer Reçu":
             # مسافة تحت اللوگو
             pdf.ln(25) 
             
-            # --- المعلومات القانونية للشركة (Reçu) ---
+            # --- المعلومات القانونية للشركة (Reçu) بدون ICE و RC ---
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 6, "IMMOCLEAN FACILITY", 0, 1)
+            pdf.cell(0, 6, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
             pdf.set_font("Arial", '', 10)
-            pdf.cell(0, 5, "Adresse : Kenitra, Maroc", 0, 1)
+            pdf.cell(0, 5, "Adresse : JMM 7 RUE MOULAY RACHID APPT 10, 4 EME ETAGE HASSAN, RABAT", 0, 1)
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
             pdf.cell(0, 5, "Email : contact@immoclean.ma", 0, 1)
-            pdf.cell(0, 5, "ICE : [VOTRE ICE] | RC : [VOTRE RC]", 0, 1)
             
             date_actuelle = datetime.datetime.now().strftime('%Y-%m-%d')
             pdf.cell(0, 5, f"Date de generation : {date_actuelle}", 0, 1)
@@ -512,14 +511,13 @@ elif menu == "Générer Devis":
             # مسافة تحت اللوگو
             pdf.ln(25) 
             
-            # --- المعلومات القانونية للشركة (Devis) ---
+            # --- المعلومات القانونية للشركة (Devis) بدون ICE و RC ---
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 6, "IMMOCLEAN FACILITY", 0, 1)
+            pdf.cell(0, 6, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
             pdf.set_font("Arial", '', 10)
-            pdf.cell(0, 5, "Adresse : Kenitra, Maroc", 0, 1)
+            pdf.cell(0, 5, "Adresse : JMM 7 RUE MOULAY RACHID APPT 10, 4 EME ETAGE HASSAN, RABAT", 0, 1)
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
             pdf.cell(0, 5, "Email : contact@immoclean.ma", 0, 1)
-            pdf.cell(0, 5, "ICE : [VOTRE ICE] | RC : [VOTRE RC]", 0, 1)
             
             # Devis & Client Info
             pdf.ln(10)
