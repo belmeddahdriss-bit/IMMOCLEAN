@@ -383,7 +383,10 @@ elif menu == "Générer Reçu":
             pdf.set_font("Arial", 'B', 16)
             pdf.cell(80)
             pdf.cell(30, 20, 'RECU DE PAIEMENT', 0, 1, 'C')
-            pdf.ln(15)
+            
+            # زدت مسافة كبيرة هنا باش المعلومات ميتخلطوش مع اللوگو
+            pdf.ln(25) 
+            
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(0, 8, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
             pdf.set_font("Arial", '', 10)
@@ -450,12 +453,11 @@ elif menu == "Générer Reçu":
                 st.success("✅ تم تجهيز التوصيل بنجاح!")
                 st.download_button(label="📥 Télécharger le Reçu", data=pdf_file, file_name=nom_fichier_pdf, mime="application/pdf")
 
-# --- 6.5. Générer Devis (تعديل باش يخدم الزر ديال التحميل) ---
+# --- 6.5. Générer Devis ---
 elif menu == "Générer Devis":
     st.header("📝 Générer un Devis (PDF)")
     st.write("صاوب عرض سعر (Devis) احترافي للكليان الجداد أو الحاليين.")
     
-    # حيدنا st.form حيت ممنوع يكون فيه زر التحميل
     col1, col2 = st.columns(2)
     with col1:
         client_nom = st.text_input("Nom du Client / Résidence (سمية الكليان أو الإقامة)")
@@ -500,7 +502,9 @@ elif menu == "Générer Devis":
             pdf.set_font("Arial", 'B', 20)
             pdf.cell(80)
             pdf.cell(30, 20, 'DEVIS', 0, 1, 'C')
-            pdf.ln(5)
+            
+            # زدت مسافة كبيرة هنا باش المعلومات ميتخلطوش مع اللوگو
+            pdf.ln(25) 
             
             # Company Info
             pdf.set_font("Arial", 'B', 12)
