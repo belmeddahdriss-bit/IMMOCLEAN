@@ -104,6 +104,8 @@ if menu == "Tableau de bord":
     total_employes = len(df_emp) if not df_emp.empty else 0
     
     residences_a_facturer = 0
+    clients_en_retard = [] # لائحة باش نعقلو على الإقامات اللي وصل خلاصهم
+    
     if not df_clients.empty and not df_hist.empty:
         for _, row in df_clients.iterrows():
             client = row["Résidence"]
@@ -116,6 +118,7 @@ if menu == "Tableau de bord":
             passages_non_payes = len(df_hist[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente")])
             if passages_non_payes >= cible:
                 residences_a_facturer += 1
+                clients_en_retard.append(client) # كنزيدوها للائحة الحمراء
 
     total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
@@ -130,7 +133,13 @@ if menu == "Tableau de bord":
     st.markdown("---")
     st.subheader("📋 Liste des Clients Actifs")
     if not df_clients.empty:
-        st.dataframe(df_clients, use_container_width=True, hide_index=True)
+        # هادي هي الدالة اللي كتلون السطر بالاحمر
+        def color_alerte(row):
+            if row['Résidence'] in clients_en_retard:
+                return ['background-color: #ffcdd2; color: #b71c1c; font-weight: bold'] * len(row)
+            return [''] * len(row)
+            
+        st.dataframe(df_clients.style.apply(color_alerte, axis=1), use_container_width=True, hide_index=True)
     else:
         st.info("Aucun client enregistré.")
 
@@ -388,7 +397,7 @@ elif menu == "Générer Reçu":
             pdf.ln(25) 
             
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 6, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
+            pdf.cell(0, 6, "IMMOCLEAN FACILITY", 0, 1)
             pdf.set_font("Arial", '', 10)
             pdf.cell(0, 5, "Adresse : JMM 7 RUE MOULAY RACHID APPT 10, 4 EME ETAGE HASSAN, RABAT", 0, 1)
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
@@ -508,7 +517,7 @@ elif menu == "Générer Devis":
             pdf.ln(25) 
             
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 6, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
+            pdf.cell(0, 6, "IMMOCLEAN FACILITY", 0, 1)
             pdf.set_font("Arial", '', 10)
             pdf.cell(0, 5, "Adresse : JMM 7 RUE MOULAY RACHID APPT 10, 4 EME ETAGE HASSAN, RABAT", 0, 1)
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
@@ -541,21 +550,17 @@ elif menu == "Générer Devis":
             if desc_cleaned.strip() == "": desc_cleaned = "Voir details avec le client"
             pdf.multi_cell(190, 8, desc_cleaned, 1)
             
-            # --- تعديل الديزاين ديال الأثمنة (مربع أنيق على ليمن) ---
             pdf.ln(5)
             pdf.set_font("Arial", 'B', 10)
             
-            # سطر Total HT
-            pdf.cell(90, 8, "", 0, 0) # مسافة خاوية على ليسر
-            pdf.cell(60, 8, "Total HT", 1, 0, 'C') # وسطنا الكلمة (Centré)
-            pdf.cell(40, 8, f"{prix_ht:.2f} MAD", 1, 1, 'C') # وسطنا الثمن
+            pdf.cell(90, 8, "", 0, 0) 
+            pdf.cell(60, 8, "Total HT", 1, 0, 'C') 
+            pdf.cell(40, 8, f"{prix_ht:.2f} MAD", 1, 1, 'C') 
             
-            # سطر TVA
             pdf.cell(90, 8, "", 0, 0)
             pdf.cell(60, 8, f"TVA ({tva})", 1, 0, 'C')
             pdf.cell(40, 8, f"{montant_tva:.2f} MAD", 1, 1, 'C')
             
-            # سطر TOTAL TTC
             pdf.set_font("Arial", 'B', 12)
             pdf.set_fill_color(240, 240, 240)
             pdf.cell(90, 10, "", 0, 0)
