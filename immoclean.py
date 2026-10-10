@@ -385,10 +385,8 @@ elif menu == "Générer Reçu":
             pdf.cell(80)
             pdf.cell(30, 20, 'RECU DE PAIEMENT', 0, 1, 'C')
             
-            # مسافة تحت اللوگو
             pdf.ln(25) 
             
-            # --- المعلومات القانونية للشركة (Reçu) بدون ICE و RC ---
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(0, 6, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
             pdf.set_font("Arial", '', 10)
@@ -498,7 +496,6 @@ elif menu == "Générer Devis":
             pdf = FPDF()
             pdf.add_page()
             
-            # Logo
             if os.path.exists("logo.png"): pdf.image("logo.png", 10, 8, 40)
             elif os.path.exists("logo.jpg"): pdf.image("logo.jpg", 10, 8, 40)
             elif os.path.exists("logo.jpeg"): pdf.image("logo.jpeg", 10, 8, 40)
@@ -508,10 +505,8 @@ elif menu == "Générer Devis":
             pdf.cell(80)
             pdf.cell(30, 20, 'DEVIS', 0, 1, 'C')
             
-            # مسافة تحت اللوگو
             pdf.ln(25) 
             
-            # --- المعلومات القانونية للشركة (Devis) بدون ICE و RC ---
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(0, 6, "IMMOCLEAN FACILITY S.A.R.L", 0, 1)
             pdf.set_font("Arial", '', 10)
@@ -519,7 +514,6 @@ elif menu == "Générer Devis":
             pdf.cell(0, 5, "Telephone : +212 649 924 354", 0, 1)
             pdf.cell(0, 5, "Email : contact@immoclean.ma", 0, 1)
             
-            # Devis & Client Info
             pdf.ln(10)
             pdf.set_fill_color(240, 240, 240)
             pdf.set_font("Arial", 'B', 11)
@@ -539,32 +533,35 @@ elif menu == "Générer Devis":
             
             pdf.ln(10)
             
-            # Table Header
             pdf.set_font("Arial", 'B', 10)
             pdf.set_fill_color(225, 245, 254)
             pdf.cell(190, 8, " Description des prestations (Details)", 1, 1, 'L', 1)
             
-            # Services Description
             pdf.set_font("Arial", '', 10)
             if desc_cleaned.strip() == "": desc_cleaned = "Voir details avec le client"
             pdf.multi_cell(190, 8, desc_cleaned, 1)
             
+            # --- تعديل الديزاين ديال الأثمنة (مربع أنيق على ليمن) ---
             pdf.ln(5)
-            
-            # Totals
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(140, 8, "Total HT", 1, 0, 'R')
-            pdf.cell(50, 8, f"{prix_ht:.2f} MAD", 1, 1, 'C')
             
-            pdf.cell(140, 8, f"TVA ({tva})", 1, 0, 'R')
-            pdf.cell(50, 8, f"{montant_tva:.2f} MAD", 1, 1, 'C')
+            # سطر Total HT
+            pdf.cell(90, 8, "", 0, 0) # مسافة خاوية على ليسر
+            pdf.cell(60, 8, "Total HT", 1, 0, 'C') # وسطنا الكلمة (Centré)
+            pdf.cell(40, 8, f"{prix_ht:.2f} MAD", 1, 1, 'C') # وسطنا الثمن
             
+            # سطر TVA
+            pdf.cell(90, 8, "", 0, 0)
+            pdf.cell(60, 8, f"TVA ({tva})", 1, 0, 'C')
+            pdf.cell(40, 8, f"{montant_tva:.2f} MAD", 1, 1, 'C')
+            
+            # سطر TOTAL TTC
             pdf.set_font("Arial", 'B', 12)
             pdf.set_fill_color(240, 240, 240)
-            pdf.cell(140, 10, "TOTAL TTC", 1, 0, 'R', 1)
-            pdf.cell(50, 10, f"{prix_ttc:.2f} MAD", 1, 1, 'C', 1)
+            pdf.cell(90, 10, "", 0, 0)
+            pdf.cell(60, 10, "TOTAL TTC", 1, 0, 'C', 1)
+            pdf.cell(40, 10, f"{prix_ttc:.2f} MAD", 1, 1, 'C', 1)
             
-            # Footer
             pdf.ln(20)
             pdf.set_font("Arial", '', 10)
             pdf.cell(0, 5, "Conditions de paiement : A la signature du contrat ou selon accord.", 0, 1)
