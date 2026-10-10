@@ -3,3 +3,5 @@ fpdf
 streamlit-option-menu
 gspread
 gspread-dataframe
+Pillow
+
