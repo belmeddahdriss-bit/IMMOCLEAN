@@ -129,6 +129,62 @@ if menu == "Tableau de bord":
     with col2: st.metric(label="🚨 Résidences à Facturer", value=f"{residences_a_facturer}")
     with col3: st.metric(label="💰 Total Entrées", value=f"{total_revenus} MAD")
     with col4: st.metric(label="💎 Solde Net (الصافي)", value=f"{solde_net} MAD", delta=f"{solde_net} MAD")
+    
+    st.markdown("---")
+    
+    # 🆕 إضافة البلانينغ ديال اليوم للـ Tableau de bord 🆕
+    st.subheader(f"📅 برنامج اليوم ({datetime.date.today().strftime('%d/%m/%Y')})")
+    
+    df_plan = load_data("Planning", COLS_PLAN)
+    if not df_plan.empty:
+        aujourdhui = datetime.date.today()
+        # تحديد سمية النهار بالفرنسية بناءً على تاريخ اليوم
+        jours_fr = {0: "Lundi", 1: "Mardi", 2: "Mercredi", 3: "Jeudi", 4: "Vendredi", 5: "Samedi", 6: "Dimanche"}
+        nom_jour_actuel = jours_fr[aujourdhui.weekday()]
+        
+        semaine_actuelle = aujourdhui.isocalendar()[1]
+        annee_actuelle = aujourdhui.isocalendar()[0]
+        
+        taches_aujourdhui = []
+        
+        for _, row in df_plan.iterrows():
+            if row["Jour"] == nom_jour_actuel or row["Jour"] == "Tous les jours":
+                try:
+                    d_debut = datetime.datetime.strptime(str(row["Date_Debut"]), "%Y-%m-%d").date()
+                    sem_debut = d_debut.isocalendar()[1]
+                    an_debut = d_debut.isocalendar()[0]
+                    diff_semaines = (annee_actuelle - an_debut) * 52 + (semaine_actuelle - sem_debut)
+                    
+                    if diff_semaines >= 0:
+                        freq = row.get("Frequence", "Chaque semaine")
+                        if freq == "Chaque semaine" or (freq == "1 semaine sur 2" and diff_semaines % 2 == 0) or (freq == "1 fois par mois" and diff_semaines % 4 == 0):
+                            taches_aujourdhui.append(row)
+                except:
+                    pass
+                    
+        df_aujourdhui = pd.DataFrame(taches_aujourdhui)
+        
+        if not df_aujourdhui.empty:
+            df_aujourdhui = df_aujourdhui.sort_values(by="Heure_Debut")
+            
+            # عرض بطاقات احترافية لكل مهمة
+            cols = st.columns(3) # قسمنا الشاشة لـ 3 ديال العمدان
+            for index, tache in df_aujourdhui.iterrows():
+                couleur = tache.get("Couleur", "#1E88E5")
+                with cols[index % 3]:
+                    st.markdown(f'''
+                    <div style="background-color: white; border-left: 6px solid {couleur}; padding: 15px; border-radius: 8px; box-shadow: 0px 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 14px; font-weight: bold; color: {couleur}; background-color: {couleur}20; padding: 3px 8px; border-radius: 12px;">🕒 {tache["Heure_Debut"]} - {tache["Heure_Fin"]}</span>
+                            <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {tache["Employe"]}</span>
+                        </div>
+                        <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {tache["Client"]}</div>
+                    </div>
+                    ''', unsafe_allow_html=True)
+        else:
+            st.info(f"🎉 ماكاين حتى خدمة مبرمجة لليوم ({nom_jour_actuel}).")
+    else:
+        st.info("البلانينغ باقي خاوي.")
         
     st.markdown("---")
     st.subheader("📋 Liste des Clients Actifs")
