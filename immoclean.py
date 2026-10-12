@@ -52,7 +52,8 @@ COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services
 COLS_HIST = ["Date", "Résidence", "Employé", "Tâches", "Statut"]
 COLS_EMP = ["Nom", "Téléphone", "Poste", "Photo"]
 COLS_FIN = ["Date", "Type", "Categorie", "Montant (MAD)", "Description"]
-COLS_PLAN = ["Employe", "Jour", "Slot1", "Slot2", "Slot3"]
+# حديت الأعمدة ديال البلانينغ كيفما تفاهمنا
+COLS_PLAN = ["Employe", "Client", "Jour", "Heure_Debut", "Heure_Fin", "Date_Debut", "Frequence", "Couleur", "Statut"]
 
 # --- القائمة الجانبية (Menu Moderne) ---
 with st.sidebar:
@@ -104,7 +105,7 @@ if menu == "Tableau de bord":
     total_employes = len(df_emp) if not df_emp.empty else 0
     
     residences_a_facturer = 0
-    clients_en_retard = [] # لائحة باش نعقلو على الإقامات اللي وصل خلاصهم
+    clients_en_retard = [] 
     
     if not df_clients.empty and not df_hist.empty:
         for _, row in df_clients.iterrows():
@@ -118,7 +119,7 @@ if menu == "Tableau de bord":
             passages_non_payes = len(df_hist[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente")])
             if passages_non_payes >= cible:
                 residences_a_facturer += 1
-                clients_en_retard.append(client) # كنزيدوها للائحة الحمراء
+                clients_en_retard.append(client) 
 
     total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
@@ -133,7 +134,6 @@ if menu == "Tableau de bord":
     st.markdown("---")
     st.subheader("📋 Liste des Clients Actifs")
     if not df_clients.empty:
-        # هادي هي الدالة اللي كتلون السطر بالاحمر
         def color_alerte(row):
             if row['Résidence'] in clients_en_retard:
                 return ['background-color: #ffcdd2; color: #b71c1c; font-weight: bold'] * len(row)
@@ -692,34 +692,68 @@ elif menu == "Gestion d'Équipe":
         st.info("Aucun employé enregistré.")
 
 # --- 8. Planning ---
-import streamlit as st
-from datetime import datetime
-
-# هاد الكود غتزيدو فالبلاصة فين كدير إدارة البلانينغ
-st.header("⚙️ إضافة مهمة للبلانينغ")
-
-with st.form("form_planning"):
-    col1, col2 = st.columns(2)
+elif menu == "Planning":
+    st.header("🗓️ إدارة البلانينغ (Planning)")
     
-    with col1:
-        # هنا من بعد غنوليو نجبدو السميات من Sheets، دابا غنديروهم كمثال
-        employe = st.selectbox("العاملة (Employé)", ["Fatime zehra", "Khadija", "Amina"])
-        client = st.text_input("الإقامة / الكليان (Client)")
-        jour = st.selectbox("النهار (Jour)", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Tous les jours"])
-        couleur = st.color_picker("عزل لون لهاد المهمة (Couleur)", "#00f900")
+    tab1, tab2 = st.tabs(["➕ إضافة مهمة جديدة", "📅 عرض الجدول (قريباً)"])
+    
+    with tab1:
+        st.subheader("⚙️ إضافة خدمة للبلانينغ")
         
-    with col2:
-        heure_debut = st.time_input("وقت البدء (Heure Début)")
-        heure_fin = st.time_input("وقت الانتهاء (Heure Fin)")
-        date_debut = st.date_input("تاريخ أول يوم عمل (Date Début)")
-        frequence = st.selectbox("التكرار (Fréquence)", ["Chaque semaine", "1 semaine sur 2"])
-        
-    submit_planning = st.form_submit_button("💾 حفظ في البلانينغ")
-
-if submit_planning:
-    if client:
-        # هنا غنزيدو الكود اللي كيصيفط هاد المعلومات لـ Google Sheets
-        st.success(f"تمت إضافة الخدمة ديال {client} مع {employe} بنجاح! ✅")
-    else:
-        st.error("عافاك دخل السمية ديال الكليان!")
-        st.rerun()
+        # جلب الكليان
+        df_clients = load_data("Clients", COLS_CLIENTS)
+        if not df_clients.empty:
+            liste_clients = df_clients["Résidence"].tolist()
+        else:
+            liste_clients = ["لا يوجد كليان مسجل"]
+            
+        # جلب العاملات
+        df_emp = load_data("Employes", COLS_EMP)
+        if not df_emp.empty:
+            liste_employes = df_emp["Nom"].tolist()
+        else:
+            liste_employes = ["لا يوجد عمال مسجلين"]
+            
+        with st.form("form_planning", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                employe = st.selectbox("العاملة (Employé)", liste_employes)
+                client = st.selectbox("الإقامة / الكليان (Client)", liste_clients)
+                jour = st.selectbox("النهار (Jour)", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Tous les jours"])
+                couleur = st.color_picker("عزل لون لهاد المهمة (Couleur)", "#8B5CF6")
+                
+            with col2:
+                heure_debut = st.time_input("وقت البدء (Heure Début)", value=datetime.datetime.strptime("08:30", "%H:%M").time())
+                heure_fin = st.time_input("وقت الانتهاء (Heure Fin)", value=datetime.datetime.strptime("12:00", "%H:%M").time())
+                date_debut = st.date_input("تاريخ أول يوم عمل (Date Début)")
+                frequence = st.selectbox("التكرار (Fréquence)", ["Chaque semaine", "1 semaine sur 2", "1 fois par mois"])
+                
+            submit_planning = st.form_submit_button("💾 حفظ في قاعدة البيانات")
+            
+        if submit_planning:
+            if client and client != "لا يوجد كليان مسجل":
+                try:
+                    df_plan = load_data("Planning", COLS_PLAN)
+                    nouvelle_tache = pd.DataFrame({
+                        "Employe": [employe],
+                        "Client": [client],
+                        "Jour": [jour],
+                        "Heure_Debut": [heure_debut.strftime("%H:%M")],
+                        "Heure_Fin": [heure_fin.strftime("%H:%M")],
+                        "Date_Debut": [date_debut.strftime("%Y-%m-%d")],
+                        "Frequence": [frequence],
+                        "Couleur": [couleur],
+                        "Statut": ["Actif"]
+                    })
+                    df_plan_final = pd.concat([df_plan, nouvelle_tache], ignore_index=True)
+                    save_data("Planning", df_plan_final)
+                    st.success(f"تمت إضافة الخدمة ديال {client} مع {employe} بنجاح! ✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"وقع مشكل أثناء الحفظ. الخطأ: {e}")
+            else:
+                st.error("⚠️ عافاك تأكد من اختيار كليان صحيح!")
+                
+    with tab2:
+        st.info("🎨 هاد البلاصة هي اللي غنبرمجو فيها داك الجدول الملون الأسبوعي قريباً!")
