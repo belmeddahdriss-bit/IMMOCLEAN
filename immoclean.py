@@ -722,4 +722,4 @@ if submit_planning:
         st.success(f"تمت إضافة الخدمة ديال {client} مع {employe} بنجاح! ✅")
     else:
         st.error("عافاك دخل السمية ديال الكليان!")
-                    st.rerun()
+        st.rerun()
