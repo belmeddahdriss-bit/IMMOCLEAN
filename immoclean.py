@@ -132,14 +132,12 @@ if menu == "Tableau de bord":
     
     st.markdown("---")
     
-    # 🆕 إضافة البلانينغ ديال اليوم وغدا للـ Tableau de bord 🆕
-    st.subheader("📅 برنامج اليوم وغداً")
+    st.subheader("📅 برنامج اليوم وغداً (مع تفاصيل المهام)")
     
     df_plan = load_data("Planning", COLS_PLAN)
     if not df_plan.empty:
         jours_fr = {0: "Lundi", 1: "Mardi", 2: "Mercredi", 3: "Jeudi", 4: "Vendredi", 5: "Samedi", 6: "Dimanche"}
         
-        # تحديد تواريخ اليوم وغدا
         dates_a_afficher = [
             ("اليوم", datetime.date.today()),
             ("غداً", datetime.date.today() + datetime.timedelta(days=1))
@@ -153,7 +151,6 @@ if menu == "Tableau de bord":
             st.markdown(f"#### 🔹 {label} ({nom_jour_cible} {date_cible.strftime('%d/%m/%Y')})")
             
             taches_jour = []
-            
             for _, row in df_plan.iterrows():
                 if row["Jour"] == nom_jour_cible or row["Jour"] == "Tous les jours":
                     try:
@@ -176,6 +173,48 @@ if menu == "Tableau de bord":
                 cols = st.columns(3)
                 for index, tache in df_jour.iterrows():
                     couleur = tache.get("Couleur", "#1E88E5")
+                    client_nom = tache["Client"]
+                    
+                    # --- الذكاء ديال تحديد المهام (دروج، سطح، باركينغ) ---
+                    taches_str = "غير محدد"
+                    badge = ""
+                    badge_color = "#555"
+                    
+                    if not df_clients.empty:
+                        client_data = df_clients[df_clients["Résidence"] == client_nom]
+                        if not client_data.empty:
+                            services = str(client_data.iloc[0].get("Services", "")).lower()
+                            
+                            # تحديد عدد الحصص فالشهر
+                            if "2 fois" in services: cible = 8
+                            elif "2/mois" in services or "15 jours" in services: cible = 2
+                            else: cible = 4
+                            
+                            # شحال من حصة دازت فهاد الشهر
+                            if not df_hist.empty:
+                                passages_non_payes = len(df_hist[(df_hist["Résidence"] == client_nom) & (df_hist["Statut"] == "En attente")])
+                            else:
+                                passages_non_payes = 0
+                            
+                            # المهام الأساسية
+                            taches_a_faire = ["الدروج"] if "escalier" in services else []
+                            if "bureau" in services: taches_a_faire.append("المكتب")
+                            
+                            # واش هادي بداية دورة جديدة (0، 4، 8...)
+                            is_debut_cycle = (passages_non_payes % cible == 0)
+                            
+                            if is_debut_cycle:
+                                if "terrasse" in services: taches_a_faire.append("السطح")
+                                if "sous-sol" in services or "parking" in services: taches_a_faire.append("الباركينغ")
+                                badge = "🌟 حصة شاملة (بداية الشهر)"
+                                badge_color = "#E91E63" # لون أحمر/وردي باش يبان مزيان
+                            else:
+                                badge = "🧹 حصة عادية"
+                                badge_color = "#388E3C" # أخضر
+                                
+                            taches_str = " + ".join(taches_a_faire) if taches_a_faire else "تنظيف عادي"
+                    # ----------------------------------------------------
+                    
                     with cols[index % 3]:
                         st.markdown(f'''
                         <div style="background-color: white; border-left: 6px solid {couleur}; padding: 15px; border-radius: 8px; box-shadow: 0px 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px;">
@@ -183,7 +222,11 @@ if menu == "Tableau de bord":
                                 <span style="font-size: 14px; font-weight: bold; color: {couleur}; background-color: {couleur}20; padding: 3px 8px; border-radius: 12px;">🕒 {tache["Heure_Debut"]} - {tache["Heure_Fin"]}</span>
                                 <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {tache["Employe"]}</span>
                             </div>
-                            <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {tache["Client"]}</div>
+                            <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {client_nom}</div>
+                            <div style="font-size: 13px; color: #444; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
+                                <b>المهام المطلوبة اليوم:</b> {taches_str} <br>
+                                <div style="margin-top: 8px;"><span style="font-size: 11px; background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 12px;">{badge}</span></div>
+                            </div>
                         </div>
                         ''', unsafe_allow_html=True)
             else:
