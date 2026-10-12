@@ -132,57 +132,64 @@ if menu == "Tableau de bord":
     
     st.markdown("---")
     
-    # 🆕 إضافة البلانينغ ديال اليوم للـ Tableau de bord 🆕
-    st.subheader(f"📅 برنامج اليوم ({datetime.date.today().strftime('%d/%m/%Y')})")
+    # 🆕 إضافة البلانينغ ديال اليوم وغدا للـ Tableau de bord 🆕
+    st.subheader("📅 برنامج اليوم وغداً")
     
     df_plan = load_data("Planning", COLS_PLAN)
     if not df_plan.empty:
-        aujourdhui = datetime.date.today()
-        # تحديد سمية النهار بالفرنسية بناءً على تاريخ اليوم
         jours_fr = {0: "Lundi", 1: "Mardi", 2: "Mercredi", 3: "Jeudi", 4: "Vendredi", 5: "Samedi", 6: "Dimanche"}
-        nom_jour_actuel = jours_fr[aujourdhui.weekday()]
         
-        semaine_actuelle = aujourdhui.isocalendar()[1]
-        annee_actuelle = aujourdhui.isocalendar()[0]
+        # تحديد تواريخ اليوم وغدا
+        dates_a_afficher = [
+            ("اليوم", datetime.date.today()),
+            ("غداً", datetime.date.today() + datetime.timedelta(days=1))
+        ]
         
-        taches_aujourdhui = []
-        
-        for _, row in df_plan.iterrows():
-            if row["Jour"] == nom_jour_actuel or row["Jour"] == "Tous les jours":
-                try:
-                    d_debut = datetime.datetime.strptime(str(row["Date_Debut"]), "%Y-%m-%d").date()
-                    sem_debut = d_debut.isocalendar()[1]
-                    an_debut = d_debut.isocalendar()[0]
-                    diff_semaines = (annee_actuelle - an_debut) * 52 + (semaine_actuelle - sem_debut)
-                    
-                    if diff_semaines >= 0:
-                        freq = row.get("Frequence", "Chaque semaine")
-                        if freq == "Chaque semaine" or (freq == "1 semaine sur 2" and diff_semaines % 2 == 0) or (freq == "1 fois par mois" and diff_semaines % 4 == 0):
-                            taches_aujourdhui.append(row)
-                except:
-                    pass
-                    
-        df_aujourdhui = pd.DataFrame(taches_aujourdhui)
-        
-        if not df_aujourdhui.empty:
-            df_aujourdhui = df_aujourdhui.sort_values(by="Heure_Debut")
+        for label, date_cible in dates_a_afficher:
+            nom_jour_cible = jours_fr[date_cible.weekday()]
+            semaine_cible = date_cible.isocalendar()[1]
+            annee_cible = date_cible.isocalendar()[0]
             
-            # عرض بطاقات احترافية لكل مهمة
-            cols = st.columns(3) # قسمنا الشاشة لـ 3 ديال العمدان
-            for index, tache in df_aujourdhui.iterrows():
-                couleur = tache.get("Couleur", "#1E88E5")
-                with cols[index % 3]:
-                    st.markdown(f'''
-                    <div style="background-color: white; border-left: 6px solid {couleur}; padding: 15px; border-radius: 8px; box-shadow: 0px 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 14px; font-weight: bold; color: {couleur}; background-color: {couleur}20; padding: 3px 8px; border-radius: 12px;">🕒 {tache["Heure_Debut"]} - {tache["Heure_Fin"]}</span>
-                            <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {tache["Employe"]}</span>
+            st.markdown(f"#### 🔹 {label} ({nom_jour_cible} {date_cible.strftime('%d/%m/%Y')})")
+            
+            taches_jour = []
+            
+            for _, row in df_plan.iterrows():
+                if row["Jour"] == nom_jour_cible or row["Jour"] == "Tous les jours":
+                    try:
+                        d_debut = datetime.datetime.strptime(str(row["Date_Debut"]), "%Y-%m-%d").date()
+                        sem_debut = d_debut.isocalendar()[1]
+                        an_debut = d_debut.isocalendar()[0]
+                        diff_semaines = (annee_cible - an_debut) * 52 + (semaine_cible - sem_debut)
+                        
+                        if diff_semaines >= 0:
+                            freq = row.get("Frequence", "Chaque semaine")
+                            if freq == "Chaque semaine" or (freq == "1 semaine sur 2" and diff_semaines % 2 == 0) or (freq == "1 fois par mois" and diff_semaines % 4 == 0):
+                                taches_jour.append(row)
+                    except:
+                        pass
+                        
+            df_jour = pd.DataFrame(taches_jour)
+            
+            if not df_jour.empty:
+                df_jour = df_jour.sort_values(by="Heure_Debut")
+                cols = st.columns(3)
+                for index, tache in df_jour.iterrows():
+                    couleur = tache.get("Couleur", "#1E88E5")
+                    with cols[index % 3]:
+                        st.markdown(f'''
+                        <div style="background-color: white; border-left: 6px solid {couleur}; padding: 15px; border-radius: 8px; box-shadow: 0px 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 14px; font-weight: bold; color: {couleur}; background-color: {couleur}20; padding: 3px 8px; border-radius: 12px;">🕒 {tache["Heure_Debut"]} - {tache["Heure_Fin"]}</span>
+                                <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {tache["Employe"]}</span>
+                            </div>
+                            <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {tache["Client"]}</div>
                         </div>
-                        <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {tache["Client"]}</div>
-                    </div>
-                    ''', unsafe_allow_html=True)
-        else:
-            st.info(f"🎉 ماكاين حتى خدمة مبرمجة لليوم ({nom_jour_actuel}).")
+                        ''', unsafe_allow_html=True)
+            else:
+                st.info(f"🎉 ماكاين حتى خدمة مبرمجة لـ {label} ({nom_jour_cible}).")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
     else:
         st.info("البلانينغ باقي خاوي.")
         
