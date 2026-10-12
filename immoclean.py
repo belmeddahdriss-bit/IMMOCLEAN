@@ -52,7 +52,6 @@ COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services
 COLS_HIST = ["Date", "Résidence", "Employé", "Tâches", "Statut"]
 COLS_EMP = ["Nom", "Téléphone", "Poste", "Photo"]
 COLS_FIN = ["Date", "Type", "Categorie", "Montant (MAD)", "Description"]
-# حديت الأعمدة ديال البلانينغ كيفما تفاهمنا
 COLS_PLAN = ["Employe", "Client", "Jour", "Heure_Debut", "Heure_Fin", "Date_Debut", "Frequence", "Couleur", "Statut"]
 
 # --- القائمة الجانبية (Menu Moderne) ---
@@ -105,7 +104,7 @@ if menu == "Tableau de bord":
     total_employes = len(df_emp) if not df_emp.empty else 0
     
     residences_a_facturer = 0
-    clients_en_retard = [] 
+    clients_en_retard = []
     
     if not df_clients.empty and not df_hist.empty:
         for _, row in df_clients.iterrows():
@@ -119,7 +118,7 @@ if menu == "Tableau de bord":
             passages_non_payes = len(df_hist[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente")])
             if passages_non_payes >= cible:
                 residences_a_facturer += 1
-                clients_en_retard.append(client) 
+                clients_en_retard.append(client)
 
     total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
@@ -695,7 +694,7 @@ elif menu == "Gestion d'Équipe":
 elif menu == "Planning":
     st.header("🗓️ إدارة البلانينغ (Planning)")
     
-    tab1, tab2 = st.tabs(["➕ إضافة مهمة جديدة", "📅 عرض الجدول (قريباً)"])
+    tab1, tab2 = st.tabs(["➕ إضافة مهمة جديدة", "📅 عرض الجدول (Planning Hebdo)"])
     
     with tab1:
         st.subheader("⚙️ إضافة خدمة للبلانينغ")
@@ -756,4 +755,96 @@ elif menu == "Planning":
                 st.error("⚠️ عافاك تأكد من اختيار كليان صحيح!")
                 
     with tab2:
-        st.info("🎨 هاد البلاصة هي اللي غنبرمجو فيها داك الجدول الملون الأسبوعي قريباً!")
+        st.subheader("📅 البلانينغ الأسبوعي الملون")
+        
+        # اختيار الأسبوع
+        col_d1, col_d2 = st.columns([1, 3])
+        with col_d1:
+            date_ref = st.date_input("اختار أسبوع (تاريخ):", datetime.date.today())
+        
+        # حساب أيام الأسبوع (من الإثنين للأحد)
+        start_of_week = date_ref - datetime.timedelta(days=date_ref.weekday())
+        jours_semaine = [start_of_week + datetime.timedelta(days=i) for i in range(7)]
+        noms_jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+        
+        st.markdown(f"**أسبوع: من {jours_semaine[0].strftime('%d/%m/%Y')} إلى {jours_semaine[6].strftime('%d/%m/%Y')}**")
+        st.markdown("---")
+        
+        df_plan = load_data("Planning", COLS_PLAN)
+        
+        if not df_plan.empty:
+            taches_a_afficher = []
+            semaine_actuelle = date_ref.isocalendar()[1]
+            annee_actuelle = date_ref.isocalendar()[0]
+            
+            # فلترة ذكية: شكون غيبان هاد السيمانة
+            for _, row in df_plan.iterrows():
+                try:
+                    d_debut = datetime.datetime.strptime(str(row["Date_Debut"]), "%Y-%m-%d").date()
+                    sem_debut = d_debut.isocalendar()[1]
+                    an_debut = d_debut.isocalendar()[0]
+                    
+                    diff_semaines = (annee_actuelle - an_debut) * 52 + (semaine_actuelle - sem_debut)
+                    
+                    if diff_semaines < 0:
+                        continue # باقي مابداش
+                        
+                    freq = row.get("Frequence", "Chaque semaine")
+                    afficher = False
+                    
+                    if freq == "Chaque semaine":
+                        afficher = True
+                    elif freq == "1 semaine sur 2" and diff_semaines % 2 == 0:
+                        afficher = True
+                    elif freq == "1 fois par mois" and diff_semaines % 4 == 0:
+                        afficher = True
+                        
+                    if afficher:
+                        taches_a_afficher.append(row)
+                except Exception as e:
+                    pass
+                    
+            df_affiche = pd.DataFrame(taches_a_afficher)
+            
+            if not df_affiche.empty:
+                employes_plan = df_affiche["Employe"].unique()
+                
+                # رسم الجدول لكل عاملة
+                for emp in employes_plan:
+                    st.markdown(f"<h4 style='color:#0b3d91;'>👩‍🔧 {emp}</h4>", unsafe_allow_html=True)
+                    cols_jours = st.columns(7)
+                    
+                    for i, col_j in enumerate(cols_jours):
+                        nom_j = noms_jours[i]
+                        date_str = jours_semaine[i].strftime("%d/%m")
+                        
+                        with col_j:
+                            # رأس العمود (اليوم والتاريخ)
+                            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#555; background-color:#e0e0e0; padding:5px; border-radius:5px;'>{nom_j}<br>{date_str}</div>", unsafe_allow_html=True)
+                            
+                            # مهام هاد النهار لهاد العاملة
+                            taches_jour = df_affiche[(df_affiche["Employe"] == emp) & ((df_affiche["Jour"] == nom_j) | (df_affiche["Jour"] == "Tous les jours"))]
+                            
+                            if not taches_jour.empty:
+                                # ترتيب بالوقت
+                                taches_jour = taches_jour.sort_values(by="Heure_Debut")
+                                for _, t in taches_jour.iterrows():
+                                    couleur = t.get("Couleur", "#1E88E5")
+                                    client_nom = t["Client"]
+                                    h_debut = t.get("Heure_Debut", "")
+                                    h_fin = t.get("Heure_Fin", "")
+                                    
+                                    st.markdown(f'''
+                                    <div style='background-color:{couleur}; color:white; padding:8px; border-radius:8px; margin-top:8px; text-align:center; font-size:13px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+                                        <b>{h_debut} - {h_fin}</b><br>
+                                        {client_nom}
+                                    </div>
+                                    ''', unsafe_allow_html=True)
+                            else:
+                                st.markdown("<div style='background-color:#f8f9fa; padding:10px; border-radius:5px; margin-top:8px; text-align:center; font-size:12px; color:#ccc; min-height:50px; border: 1px dashed #ccc;'>-</div>", unsafe_allow_html=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+            else:
+                st.info("لا توجد أي مهام مبرمجة في هذا الأسبوع بالذات (حسب الإعدادات ديال 'سيمانة آه سيمانة لا').")
+        else:
+            st.info("البلانينغ باقي خاوي. سير للخانة ديال الإضافة ودخل المهام.")
