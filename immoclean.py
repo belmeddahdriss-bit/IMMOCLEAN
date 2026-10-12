@@ -692,94 +692,34 @@ elif menu == "Gestion d'Équipe":
         st.info("Aucun employé enregistré.")
 
 # --- 8. Planning ---
-elif menu == "Planning":
-    st.header("📅 Planning de la semaine (برنامج الأسبوع)")
-    df_emp = load_data("Employes", COLS_EMP)
-    df_clients = load_data("Clients", COLS_CLIENTS)
-    if df_emp.empty or df_clients.empty:
-        st.warning("خاصك تدخل الكليان والعمال أولاً.")
+import streamlit as st
+from datetime import datetime
+
+# هاد الكود غتزيدو فالبلاصة فين كدير إدارة البلانينغ
+st.header("⚙️ إضافة مهمة للبلانينغ")
+
+with st.form("form_planning"):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # هنا من بعد غنوليو نجبدو السميات من Sheets، دابا غنديروهم كمثال
+        employe = st.selectbox("العاملة (Employé)", ["Fatime zehra", "Khadija", "Amina"])
+        client = st.text_input("الإقامة / الكليان (Client)")
+        jour = st.selectbox("النهار (Jour)", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Tous les jours"])
+        couleur = st.color_picker("عزل لون لهاد المهمة (Couleur)", "#00f900")
+        
+    with col2:
+        heure_debut = st.time_input("وقت البدء (Heure Début)")
+        heure_fin = st.time_input("وقت الانتهاء (Heure Fin)")
+        date_debut = st.date_input("تاريخ أول يوم عمل (Date Début)")
+        frequence = st.selectbox("التكرار (Fréquence)", ["Chaque semaine", "1 semaine sur 2"])
+        
+    submit_planning = st.form_submit_button("💾 حفظ في البلانينغ")
+
+if submit_planning:
+    if client:
+        # هنا غنزيدو الكود اللي كيصيفط هاد المعلومات لـ Google Sheets
+        st.success(f"تمت إضافة الخدمة ديال {client} مع {employe} بنجاح! ✅")
     else:
-        femmes_menage = df_emp[df_emp["Poste"] == "Femme de ménage"]["Nom"].tolist()
-        if not femmes_menage:
-            st.info("ما كاينا حتى 'Femme de ménage' مسجلة.")
-        else:
-            employe_choisie = st.selectbox("👩‍🔧 اختار العاملة:", femmes_menage)
-            tous_clients = df_clients["Résidence"].tolist()
-            
-            df_plan = load_data("Planning", COLS_PLAN)
-            
-            st.markdown(f"#### برنامج العمل ديال: **<span style='color:#1E88E5;'>{employe_choisie}</span>**", unsafe_allow_html=True)
-            jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
-            
-            with st.form("form_planning"):
-                selections = {}
-                activer_slot_3 = st.checkbox("➕ تفعيل خانة حصة ثالثة (Slot 3) في الجدول أسبوعياً")
-                
-                cols1 = st.columns(4)
-                for i, jour in enumerate(jours[:4]):
-                    with cols1[i]:
-                        st.markdown(f"<div style='background-color:#e1f5fe; padding:8px; border-radius:5px; text-align:center; margin-bottom:10px; color:#0b3d91;'><b>🗓️ {jour}</b></div>", unsafe_allow_html=True)
-                        v1, v2, v3 = "", "", ""
-                        if not df_plan.empty:
-                            row_actuel = df_plan[(df_plan["Employe"] == employe_choisie) & (df_plan["Jour"] == jour)]
-                            if not row_actuel.empty:
-                                v1 = str(row_actuel["Slot1"].values[0]) if pd.notna(row_actuel["Slot1"].values[0]) else ""
-                                v2 = str(row_actuel["Slot2"].values[0]) if pd.notna(row_actuel["Slot2"].values[0]) else ""
-                                v3 = str(row_actuel["Slot3"].values[0]) if pd.notna(row_actuel["Slot3"].values[0]) else ""
-                                if v1 == "nan": v1 = ""
-                                if v2 == "nan": v2 = ""
-                                if v3 == "nan": v3 = ""
-                                
-                        dispo_v1 = [""] + tous_clients
-                        dispo_v2 = [""] + tous_clients
-                        dispo_v3 = [""] + tous_clients
-                        
-                        s1 = st.selectbox("حصة 1️⃣", options=dispo_v1, index=dispo_v1.index(v1) if v1 in dispo_v1 else 0, key=f"{jour}_1")
-                        s2 = st.selectbox("حصة 2️⃣", options=dispo_v2, index=dispo_v2.index(v2) if v2 in dispo_v2 else 0, key=f"{jour}_2")
-                        s3 = ""
-                        if activer_slot_3 or v3 != "":
-                            s3 = st.selectbox("حصة 3️⃣ (إضافية)", options=dispo_v3, index=dispo_v3.index(v3) if v3 in dispo_v3 else 0, key=f"{jour}_3")
-                            
-                        selections[jour] = [s1, s2, s3]
-                        
-                st.write("") 
-                cols2 = st.columns(4)
-                for i, jour in enumerate(jours[4:]):
-                    with cols2[i]:
-                        st.markdown(f"<div style='background-color:#e1f5fe; padding:8px; border-radius:5px; text-align:center; margin-bottom:10px; color:#0b3d91;'><b>🗓️ {jour}</b></div>", unsafe_allow_html=True)
-                        v1, v2, v3 = "", "", ""
-                        if not df_plan.empty:
-                            row_actuel = df_plan[(df_plan["Employe"] == employe_choisie) & (df_plan["Jour"] == jour)]
-                            if not row_actuel.empty:
-                                v1 = str(row_actuel["Slot1"].values[0]) if pd.notna(row_actuel["Slot1"].values[0]) else ""
-                                v2 = str(row_actuel["Slot2"].values[0]) if pd.notna(row_actuel["Slot2"].values[0]) else ""
-                                v3 = str(row_actuel["Slot3"].values[0]) if pd.notna(row_actuel["Slot3"].values[0]) else ""
-                                if v1 == "nan": v1 = ""
-                                if v2 == "nan": v2 = ""
-                                if v3 == "nan": v3 = ""
-                                
-                        dispo_v1 = [""] + tous_clients
-                        dispo_v2 = [""] + tous_clients
-                        dispo_v3 = [""] + tous_clients
-                        
-                        s1 = st.selectbox("حصة 1️⃣", options=dispo_v1, index=dispo_v1.index(v1) if v1 in dispo_v1 else 0, key=f"{jour}_1_b")
-                        s2 = st.selectbox("حصة 2️⃣", options=dispo_v2, index=dispo_v2.index(v2) if v2 in dispo_v2 else 0, key=f"{jour}_2_b")
-                        s3 = ""
-                        if activer_slot_3 or v3 != "":
-                            s3 = st.selectbox("حصة 3️⃣ (إضافية)", options=dispo_v3, index=dispo_v3.index(v3) if v3 in dispo_v3 else 0, key=f"{jour}_3_b")
-                            
-                        selections[jour] = [s1, s2, s3]
-                        
-                st.write("")
-                if st.form_submit_button("💾 Sauvegarder le Planning (حفظ البرنامج)"):
-                    df_plan = df_plan[df_plan["Employe"] != employe_choisie]
-                    nouvelles_lignes = []
-                    for jour in jours:
-                        nouvelles_lignes.append({
-                            "Employe": employe_choisie, "Jour": jour,
-                            "Slot1": selections[jour][0], "Slot2": selections[jour][1], "Slot3": selections[jour][2]
-                        })
-                    df_plan = pd.concat([df_plan, pd.DataFrame(nouvelles_lignes)], ignore_index=True)
-                    save_data("Planning", df_plan)
-                    st.success("تم تسجيل البرنامج الأسبوعي بنجاح في Google Sheets!")
+        st.error("عافاك دخل السمية ديال الكليان!")
                     st.rerun()
