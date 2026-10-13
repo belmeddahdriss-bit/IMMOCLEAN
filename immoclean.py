@@ -132,7 +132,7 @@ if menu == "Tableau de bord":
     
     st.markdown("---")
     
-    st.subheader("📅 برنامج اليوم وغداً (مع تفاصيل المهام)")
+    st.subheader("📅 برنامج اليوم وغداً (مع Pointage سريع)")
     
     df_plan = load_data("Planning", COLS_PLAN)
     if not df_plan.empty:
@@ -147,6 +147,7 @@ if menu == "Tableau de bord":
             nom_jour_cible = jours_fr[date_cible.weekday()]
             semaine_cible = date_cible.isocalendar()[1]
             annee_cible = date_cible.isocalendar()[0]
+            date_cible_str = str(date_cible)
             
             st.markdown(f"#### 🔹 {label} ({nom_jour_cible} {date_cible.strftime('%d/%m/%Y')})")
             
@@ -169,14 +170,16 @@ if menu == "Tableau de bord":
             df_jour = pd.DataFrame(taches_jour)
             
             if not df_jour.empty:
-                df_jour = df_jour.sort_values(by="Heure_Debut")
+                df_jour = df_jour.sort_values(by="Heure_Debut").reset_index(drop=True)
                 cols = st.columns(3)
                 for index, tache in df_jour.iterrows():
                     couleur = tache.get("Couleur", "#1E88E5")
                     client_nom = tache["Client"]
+                    emp_nom = tache["Employe"]
                     
                     # --- الذكاء ديال تحديد المهام (دروج، سطح، باركينغ) ---
                     taches_str = "غير محدد"
+                    taches_hist_list = []
                     badge = ""
                     badge_color = "#555"
                     
@@ -185,50 +188,86 @@ if menu == "Tableau de bord":
                         if not client_data.empty:
                             services = str(client_data.iloc[0].get("Services", "")).lower()
                             
-                            # تحديد عدد الحصص فالشهر
                             if "2 fois" in services: cible = 8
                             elif "2/mois" in services or "15 jours" in services: cible = 2
                             else: cible = 4
                             
-                            # شحال من حصة دازت فهاد الشهر
                             if not df_hist.empty:
                                 passages_non_payes = len(df_hist[(df_hist["Résidence"] == client_nom) & (df_hist["Statut"] == "En attente")])
                             else:
                                 passages_non_payes = 0
                             
-                            # المهام الأساسية
-                            taches_a_faire = ["الدروج"] if "escalier" in services else []
-                            if "bureau" in services: taches_a_faire.append("المكتب")
+                            taches_a_faire = []
+                            if "escalier" in services: 
+                                taches_a_faire.append("الدروج")
+                                taches_hist_list.append("Escaliers")
+                            if "bureau" in services: 
+                                taches_a_faire.append("المكتب")
+                                taches_hist_list.append("Bureau")
                             
-                            # واش هادي بداية دورة جديدة (0، 4، 8...)
                             is_debut_cycle = (passages_non_payes % cible == 0)
                             
                             if is_debut_cycle:
-                                if "terrasse" in services: taches_a_faire.append("السطح")
-                                if "sous-sol" in services or "parking" in services: taches_a_faire.append("الباركينغ")
+                                if "terrasse" in services: 
+                                    taches_a_faire.append("السطح")
+                                    taches_hist_list.append("Terrasse")
+                                if "sous-sol" in services or "parking" in services: 
+                                    taches_a_faire.append("الباركينغ")
+                                    taches_hist_list.append("Parking")
                                 badge = "🌟 حصة شاملة (بداية الشهر)"
-                                badge_color = "#E91E63" # لون أحمر/وردي باش يبان مزيان
+                                badge_color = "#E91E63"
                             else:
                                 badge = "🧹 حصة عادية"
-                                badge_color = "#388E3C" # أخضر
+                                badge_color = "#388E3C"
                                 
                             taches_str = " + ".join(taches_a_faire) if taches_a_faire else "تنظيف عادي"
+                            taches_hist_str = " + ".join(taches_hist_list) if taches_hist_list else "Escaliers"
+                        else:
+                            taches_hist_str = "Escaliers"
+                    else:
+                        taches_hist_str = "Escaliers"
                     # ----------------------------------------------------
                     
                     with cols[index % 3]:
                         st.markdown(f'''
-                        <div style="background-color: white; border-left: 6px solid {couleur}; padding: 15px; border-radius: 8px; box-shadow: 0px 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px;">
+                        <div style="background-color: white; border-left: 6px solid {couleur}; padding: 15px; border-radius: 8px; box-shadow: 0px 4px 6px rgba(0,0,0,0.05); margin-bottom: 8px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                 <span style="font-size: 14px; font-weight: bold; color: {couleur}; background-color: {couleur}20; padding: 3px 8px; border-radius: 12px;">🕒 {tache["Heure_Debut"]} - {tache["Heure_Fin"]}</span>
-                                <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {tache["Employe"]}</span>
+                                <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {emp_nom}</span>
                             </div>
                             <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {client_nom}</div>
                             <div style="font-size: 13px; color: #444; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
-                                <b>المهام المطلوبة اليوم:</b> {taches_str} <br>
+                                <b>المهام المطلوبة:</b> {taches_str} <br>
                                 <div style="margin-top: 8px;"><span style="font-size: 11px; background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 12px;">{badge}</span></div>
                             </div>
                         </div>
                         ''', unsafe_allow_html=True)
+                        
+                        # --- زر البوانتاج السريع (خاص بمهام اليوم فقط) ---
+                        if label == "اليوم":
+                            deja_pointe = False
+                            if not df_hist.empty:
+                                verif = df_hist[(df_hist["Date"] == date_cible_str) & (df_hist["Résidence"] == client_nom) & (df_hist["Employé"] == emp_nom)]
+                                if not verif.empty:
+                                    deja_pointe = True
+                                    
+                            if deja_pointe:
+                                st.button("✔️ تم إنجاز الحصة اليوم", key=f"done_{index}_{client_nom}", disabled=True, use_container_width=True)
+                            else:
+                                if st.button(f"✅ تأكيد الإنجاز ({client_nom})", key=f"btn_pt_{index}_{client_nom}", use_container_width=True):
+                                    nv_passage = pd.DataFrame({
+                                        "Date": [date_cible_str], 
+                                        "Résidence": [client_nom], 
+                                        "Employé": [emp_nom], 
+                                        "Tâches": [taches_hist_str], 
+                                        "Statut": ["En attente"]
+                                    })
+                                    df_hist_updated = pd.concat([df_hist, nv_passage], ignore_index=True)
+                                    save_data("Historique", df_hist_updated)
+                                    st.success(f"تم تسجيل الحصة لـ {client_nom} بنجاح!")
+                                    st.rerun()
+                        
+                        st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
             else:
                 st.info(f"🎉 ماكاين حتى خدمة مبرمجة لـ {label} ({nom_jour_cible}).")
             
