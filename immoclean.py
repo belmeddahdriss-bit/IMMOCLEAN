@@ -181,6 +181,12 @@ if menu == "Tableau de bord":
     df_hist = load_data("Historique", COLS_HIST)
     df_fin = load_data("Finances", COLS_FIN)
     
+    # قاموس (Dictionnaire) باش نجبدو السيكتور ديال كل إقامة بسرعة
+    secteurs_dict = {}
+    if not df_clients.empty:
+        for _, r_c in df_clients.iterrows():
+            secteurs_dict[str(r_c["Résidence"])] = str(r_c.get("Secteur", "")).strip()
+    
     total_clients = len(df_clients) if not df_clients.empty else 0
     total_employes = len(df_emp) if not df_emp.empty else 0
     
@@ -213,7 +219,7 @@ if menu == "Tableau de bord":
     
     st.markdown("---")
     
-    st.subheader("📅 برنامج اليوم وغداً (مع Pointage وتأجيل الحصص)")
+    st.subheader("📅 برنامج اليوم وغداً (مع الموقع، Pointage وتأجيل الحصص)")
     
     df_plan = load_data("Planning", COLS_PLAN)
     if not df_plan.empty:
@@ -266,6 +272,10 @@ if menu == "Tableau de bord":
                     emp_nom = tache["Employe"]
                     freq_tache = str(tache.get("Frequence", ""))
                     statut_tache = str(tache.get("Statut", "Actif"))
+                    
+                    # جلب السيكتور ديال هاد الإقامة
+                    secteur_client = secteurs_dict.get(str(client_nom), "")
+                    secteur_html = f'<div style="font-size: 13px; color: #1E88E5; font-weight: 600; margin-bottom: 5px;">📍 المنطقـة: {secteur_client}</div>' if secteur_client else ""
                     
                     est_reportee = False
                     date_report_vers = ""
@@ -341,8 +351,9 @@ if menu == "Tableau de bord":
                                 <span style="font-size: 14px; font-weight: bold; color: {couleur}; background-color: {couleur}20; padding: 3px 8px; border-radius: 12px;">🕒 {tache["Heure_Debut"]} - {tache["Heure_Fin"]}</span>
                                 <span style="font-size: 14px; font-weight: bold; color: #555;">👩‍🔧 {emp_nom}</span>
                             </div>
-                            <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">🏢 {client_nom}</div>
-                            <div style="font-size: 13px; color: #444; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
+                            <div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 3px;">🏢 {client_nom}</div>
+                            {secteur_html}
+                            <div style="font-size: 13px; color: #444; margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px;">
                                 <b>المهام المطلوبة:</b> {taches_str} <br>
                                 <div style="margin-top: 8px;"><span style="font-size: 11px; background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 12px;">{badge}</span></div>
                             </div>
@@ -983,37 +994,74 @@ elif menu == "Gestion d'Équipe":
 elif menu == "Planning":
     st.header("🗓️ إدارة البلانينغ (Planning)")
     
+    df_clients = load_data("Clients", COLS_CLIENTS)
+    df_emp = load_data("Employes", COLS_EMP)
+    df_plan = load_data("Planning", COLS_PLAN)
+    
+    # قاموس السيكتورات
+    secteurs_dict = {}
+    if not df_clients.empty:
+        for _, r_c in df_clients.iterrows():
+            secteurs_dict[str(r_c["Résidence"])] = str(r_c.get("Secteur", "")).strip()
+    
     tab1, tab2 = st.tabs(["➕ إضافة مهمة جديدة", "📅 عرض الجدول (Planning Hebdo)"])
     
     with tab1:
-        st.subheader("⚙️ إضافة خدمة للبلانينغ (مع كاشف التداخل 🚨)")
+        st.subheader("⚙️ إضافة خدمة للبلانينغ (مع المساعد الجغرافي 📍 وكاشف التداخل 🚨)")
         
-        df_clients = load_data("Clients", COLS_CLIENTS)
         if not df_clients.empty:
             liste_clients = df_clients["Résidence"].tolist()
         else:
             liste_clients = ["لا يوجد كليان مسجل"]
             
-        df_emp = load_data("Employes", COLS_EMP)
         if not df_emp.empty:
             liste_employes = df_emp["Nom"].tolist()
         else:
             liste_employes = ["لا يوجد عمال مسجلين"]
             
+        # خيارات العاملة واليوم خارج الفورم باش يشتغل المساعد الجغرافي مباشرة
+        col_pre1, col_pre2 = st.columns(2)
+        with col_pre1:
+            employe = st.selectbox("1️⃣ اختار العاملة (Employé):", liste_employes)
+        with col_pre2:
+            jour = st.selectbox("2️⃣ اختار النهار (Jour):", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Tous les jours"])
+            
+        # --- 💡 المساعد الذكي لتتبع السيكتور (400m) ---
+        if not df_plan.empty and employe != "لا يوجد عمال مسجلين":
+            taches_emp_jour = df_plan[(df_plan["Employe"] == employe) & ((df_plan["Jour"] == jour) | (df_plan["Jour"] == "Tous les jours")) & (df_plan["Frequence"] != "Exception")]
+            if not taches_emp_jour.empty:
+                secteurs_jour = []
+                clients_jour = []
+                for _, r_t in taches_emp_jour.iterrows():
+                    c_nom = str(r_t["Client"])
+                    clients_jour.append(f"{c_nom} ({r_t['Heure_Debut']}-{r_t['Heure_Fin']})")
+                    sec = secteurs_dict.get(c_nom, "")
+                    if sec and sec not in secteurs_jour:
+                        secteurs_jour.append(sec)
+                
+                sec_str = " ، ".join(secteurs_jour) if secteurs_jour else "غير محدد"
+                cli_str = " + ".join(clients_jour)
+                st.info(f"💡 **تذكير جغرافي:** العاملة **{employe}** مبرمجة يوم **{jour}** في منطقة: **📍 {sec_str}** (الإقامات: {cli_str}). من الأحسن تزيد ليها إقامة قريبة لهاد السيكتور!")
+            else:
+                st.success(f"✅ العاملة **{employe}** ما عندها حتى إقامة مسجلة يوم **{jour}** لحد الآن. تقدر تفتح ليها أي سيكتور بغيتي!")
+        
         with st.form("form_planning", clear_on_submit=False):
             col1, col2 = st.columns(2)
             
             with col1:
-                employe = st.selectbox("العاملة (Employé)", liste_employes)
-                client = st.selectbox("الإقامة / الكليان (Client)", liste_clients)
-                jour = st.selectbox("النهار (Jour)", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Tous les jours"])
+                # عرض الإقامة مع السيكتور ديالها فـ اللائحة باش يسهل الاختيار
+                client = st.selectbox(
+                    "الإقامة / الكليان (Client)", 
+                    options=liste_clients,
+                    format_func=lambda x: f"{x} (📍 {secteurs_dict.get(x, 'بدون سيكتور')})" if x in secteurs_dict and secteurs_dict.get(x, "") != "" else x
+                )
+                frequence = st.selectbox("التكرار (Fréquence)", ["Chaque semaine", "1 semaine sur 2", "1 fois par mois"])
                 couleur = st.color_picker("عزل لون لهاد المهمة (Couleur)", "#8B5CF6")
                 
             with col2:
                 heure_debut = st.time_input("وقت البدء (Heure Début)", value=datetime.datetime.strptime("08:30", "%H:%M").time())
                 heure_fin = st.time_input("وقت الانتهاء (Heure Fin)", value=datetime.datetime.strptime("12:00", "%H:%M").time())
                 date_debut = st.date_input("تاريخ أول يوم عمل (Date Début)")
-                frequence = st.selectbox("التكرار (Fréquence)", ["Chaque semaine", "1 semaine sur 2", "1 fois par mois"])
                 
             submit_planning = st.form_submit_button("💾 حفظ في قاعدة البيانات")
             
@@ -1023,7 +1071,6 @@ elif menu == "Planning":
                     st.error("⛔ خطأ فالتوقيت: وقت الانتهاء خاصو يكون من بعد وقت البدء!")
                 else:
                     try:
-                        df_plan = load_data("Planning", COLS_PLAN)
                         conflit, msg_conflit = verifier_conflit_ajout(df_plan, employe, jour, heure_debut, heure_fin, date_debut, frequence)
                         
                         if conflit:
@@ -1042,7 +1089,7 @@ elif menu == "Planning":
                             })
                             df_plan_final = pd.concat([df_plan, nouvelle_tache], ignore_index=True)
                             save_data("Planning", df_plan_final)
-                            st.success(f"تمت إضافة الخدمة ديال {client} مع {employe} بنجاح! ✅")
+                            st.success(f"تمت إضافة الخدمة ديال {client} مع {employe} يوم {jour} بنجاح! ✅")
                             st.rerun()
                     except Exception as e:
                         st.error(f"وقع مشكل أثناء الحفظ. الخطأ: {e}")
@@ -1063,8 +1110,6 @@ elif menu == "Planning":
         
         st.markdown(f"**أسبوع: من {jours_semaine[0].strftime('%d/%m/%Y')} إلى {jours_semaine[6].strftime('%d/%m/%Y')}**")
         st.markdown("---")
-        
-        df_plan = load_data("Planning", COLS_PLAN)
         
         if not df_plan.empty:
             taches_a_afficher = []
@@ -1130,6 +1175,9 @@ elif menu == "Planning":
                                     h_fin = t.get("Heure_Fin", "")
                                     freq_t = str(t.get("Frequence", ""))
                                     
+                                    sec_t = secteurs_dict.get(str(client_nom), "")
+                                    sec_badge = f"<br><span style='font-size:11px; opacity:0.9;'>📍 {sec_t}</span>" if sec_t else ""
+                                    
                                     est_rep_jour = False
                                     if freq_t != "Exception":
                                         v_rep = df_plan[(df_plan["Frequence"] == "Exception") & (df_plan["Client"] == client_nom) & (df_plan["Statut"] == f"Report:{date_iso_str}")]
@@ -1149,6 +1197,7 @@ elif menu == "Planning":
                                         <div style='background-color:{couleur}; color:white; padding:8px; border-radius:8px; margin-top:8px; text-align:center; font-size:13px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
                                             <b>{h_debut} - {h_fin}</b><br>
                                             {prefix}{client_nom}
+                                            {sec_badge}
                                         </div>
                                         ''', unsafe_allow_html=True)
                             else:
