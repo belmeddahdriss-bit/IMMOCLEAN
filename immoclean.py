@@ -190,6 +190,11 @@ if menu == "Tableau de bord":
     total_clients = len(df_clients) if not df_clients.empty else 0
     total_employes = len(df_emp) if not df_emp.empty else 0
     
+    # حساب مجموع الأموال في العقود الشهرية (Total Contrats)
+    total_contrats_mad = 0
+    if not df_clients.empty and "Prix (MAD)" in df_clients.columns:
+        total_contrats_mad = pd.to_numeric(df_clients["Prix (MAD)"], errors='coerce').fillna(0).sum()
+    
     residences_a_facturer = 0
     clients_en_retard = []
     
@@ -211,14 +216,42 @@ if menu == "Tableau de bord":
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     solde_net = total_revenus - total_depenses
     
-    col1, col2, col3, col4 = st.columns(4)
-    with col1: st.metric(label="🏢 Total Clients", value=f"{total_clients}")
-    with col2: st.metric(label="🚨 Résidences à Facturer", value=f"{residences_a_facturer}")
-    with col3: st.metric(label="💰 Total Entrées", value=f"{total_revenus:,.0f} MAD")
-    with col4: st.metric(label="💎 Solde Net (الصافي)", value=f"{solde_net:,.0f} MAD", delta=f"{solde_net:,.0f} MAD")
+    # عرض البطاقات الخمسة الفوق (بما فيها مجموع العقود)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1: st.metric(label="🏢 إجمالي الإقامات", value=f"{total_clients}")
+    with col2: st.metric(label="📜 قيمة العقود الشهرية", value=f"{total_contrats_mad:,.0f} MAD")
+    with col3: st.metric(label="🚨 واجب استخلاصها", value=f"{residences_a_facturer}")
+    with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{total_revenus:,.0f} MAD")
+    with col5: st.metric(label="💎 الصافي (Solde Net)", value=f"{solde_net:,.0f} MAD")
     
     if clients_en_retard:
         st.warning(f"🔔 **إقامات وصلات لوقت الخلاص:** {' ، '.join(clients_en_retard)}")
+
+    st.markdown("---")
+    
+    # --- جدول الإقامات المتعاقد معها مع خانة المجموع في الأخير ---
+    with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (مع مجموع قيمة العقود)", expanded=True):
+        if not df_clients.empty:
+            df_cl_display = df_clients.copy()
+            df_cl_display["Prix (MAD)"] = pd.to_numeric(df_cl_display["Prix (MAD)"], errors='coerce').fillna(0)
+            
+            # إنشاء سطر المجموع في آخر الجدول
+            total_row = pd.DataFrame({
+                "Résidence": ["💰 المجموع الإجمالي للعقود (TOTAL)"],
+                "Secteur": [f"{total_clients} إقامات"],
+                "Responsable": ["—"],
+                "Téléphone": ["—"],
+                "Services": ["—"],
+                "Produits": ["—"],
+                "Prix (MAD)": [total_contrats_mad],
+                "Jour de paiement": ["شهرياً (Par mois)"]
+            })
+            
+            df_cl_avec_total = pd.concat([df_cl_display, total_row], ignore_index=True)
+            st.dataframe(df_cl_avec_total, use_container_width=True, hide_index=True)
+            st.success(f"💵 **مجموع الأموال الشهرية الثابتة في العقود (MRR):** `{total_contrats_mad:,.2f} MAD / Mois`")
+        else:
+            st.info("لا توجد إقامات مسجلة حالياً.")
 
     st.markdown("---")
     st.subheader("📅 برنامج اليوم وغداً (مع الموقع، Pointage وتأجيل الحصص)")
@@ -465,6 +498,11 @@ elif menu == "Gérer les clients":
     if not df_clients.empty:
         st.info("💡 يمكنك تعديل أي معلومة مباشرة في الجدول أسفله أو مسح سطر، ثم الضغط على **حفظ التعديلات**.")
         edited_df = st.data_editor(df_clients, num_rows="dynamic", use_container_width=True)
+        
+        # حساب وعرض المجموع مباشرة تحت الجدول أيضاً
+        total_c = pd.to_numeric(edited_df["Prix (MAD)"], errors='coerce').fillna(0).sum()
+        st.markdown(f"#### 💰 المجموع الإجمالي للعقود في الجدول: **`{total_c:,.2f} MAD / Mois`**")
+        
         if st.button("💾 حفظ التعديلات (Enregistrer)", use_container_width=True):
             save_data("Clients", edited_df)
             st.success("✔️ تم تحديث بيانات الزبناء بنجاح!")
@@ -686,7 +724,7 @@ elif menu == "Finances & Trésorerie":
     st.markdown("---")
 
     # ----------------------------------------------------------
-    # 📋 4. جدول تتبع العمليات مع الفلتر وتعديل الأخطاء
+    # 📋 4. جدول تتبع العمليات مع الفلتر
     # ----------------------------------------------------------
     st.subheader("📋 سجل الحسابات التفصيلي")
     if not df_fin.empty:
