@@ -34,6 +34,13 @@ def init_gsheets():
 
 sh = init_gsheets()
 
+# --- دالة تنظيف أرقام الهاتف من + و = باش ما يطلعش #ERROR! فـ Google Sheets ---
+def nettoyer_texte_gsheet(val):
+    s = str(val).strip()
+    if s.startswith("+") or s.startswith("="):
+        return s.lstrip("+=").strip()
+    return s
+
 # --- دوال جلب وحفظ البيانات ---
 def load_data(sheet_name, columns):
     ws = sh.worksheet(sheet_name)
@@ -44,12 +51,18 @@ def load_data(sheet_name, columns):
     for col in columns:
         if col not in df.columns:
             df[col] = ""
+    # تحويل عمود الهاتف دائماً إلى نص باش يتعدل بسهولة
+    if "Téléphone" in df.columns:
+        df["Téléphone"] = df["Téléphone"].astype(str)
     return df
 
 def save_data(sheet_name, df):
     ws = sh.worksheet(sheet_name)
+    df_clean = df.copy()
+    if "Téléphone" in df_clean.columns:
+        df_clean["Téléphone"] = df_clean["Téléphone"].apply(nettoyer_texte_gsheet)
     ws.clear()
-    set_with_dataframe(ws, df)
+    set_with_dataframe(ws, df_clean)
 
 # --- دالة حساب عدد الحصص المستهدفة فالشهر لكل إقامة ---
 def calculer_cible_passages(services_str):
@@ -90,7 +103,6 @@ def verifier_conflit_ajout(df_plan, emp, jour, h_deb, h_fin, d_deb, freq):
             r_jour in ["Tous les jours", "Tous les jours (Sauf Dimanche)"] or 
             jour in ["Tous les jours", "Tous les jours (Sauf Dimanche)"]
         )
-        # استثناء يوم الأحد إيلا كانت المبرمجة غير من الاثنين للسبت
         if (r_jour == "Tous les jours (Sauf Dimanche)" and jour == "Dimanche") or (jour == "Tous les jours (Sauf Dimanche)" and r_jour == "Dimanche"):
             match_jour = False
 
@@ -230,10 +242,10 @@ if menu == "Tableau de bord":
     
     if not df_clients.empty and not df_hist.empty:
         for _, row in df_clients.iterrows():
-            client = row["Résidence"]
+            client = str(row["Résidence"]).strip()
             cible = calculer_cible_passages(row.get("Services", ""))
             
-            passages_non_payes = len(df_hist[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente")])
+            passages_non_payes = len(df_hist[(df_hist["Résidence"].astype(str).str.strip() == client) & (df_hist["Statut"] == "En attente")])
             if passages_non_payes >= cible:
                 residences_a_facturer += 1
                 clients_en_retard.append(client)
@@ -242,7 +254,7 @@ if menu == "Tableau de bord":
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     solde_net = total_revenus - total_depenses
     
-    # عرض البطاقات الخمسة الفوق (بما فيها مجموع العقود)
+    # عرض البطاقات الخمسة الفوق
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric(label="🏢 إجمالي الإقامات", value=f"{total_clients}")
     with col2: st.metric(label="📜 قيمة العقود الشهرية", value=f"{total_contrats_mad:,.0f} MAD")
@@ -250,13 +262,19 @@ if menu == "Tableau de bord":
     with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{total_revenus:,.0f} MAD")
     with col5: st.metric(label="💎 الصافي (Solde Net)", value=f"{solde_net:,.0f} MAD")
     
+    # تنبيه أحمر بارز للإقامات اللي وصلات لوقت الخلاص
     if clients_en_retard:
-        st.warning(f"🔔 **إقامات وصلات لوقت الخلاص:** {' ، '.join(clients_en_retard)}")
+        st.markdown(f"""
+        <div style="background-color: #ffebee; border-left: 6px solid #d32f2f; padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <h4 style="color: #c62828 !important; margin: 0;">🚨 تنبيه الأداء: إقامات وصلت لوقت الخلاص!</h4>
+            <p style="color: #b71c1c; font-size: 16px; font-weight: bold; margin: 5px 0 0 0;">🏢 {'  |  🏢 '.join(clients_en_retard)}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
     
-    # --- جدول الإقامات المتعاقد معها مع خانة المجموع في الأخير ---
-    with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (مع مجموع قيمة العقود)", expanded=True):
+    # --- جدول الإقامات المتعاقد معها مع تلوين الإقامات اللي وصل خلاصها بالأحمر ---
+    with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (الإقامات باللون الأحمر وصل وقت خلاصها 🚨)", expanded=True):
         if not df_clients.empty:
             df_cl_display = df_clients.copy()
             df_cl_display["Prix (MAD)"] = pd.to_numeric(df_cl_display["Prix (MAD)"], errors='coerce').fillna(0)
@@ -274,7 +292,18 @@ if menu == "Tableau de bord":
             })
             
             df_cl_avec_total = pd.concat([df_cl_display, total_row], ignore_index=True)
-            st.dataframe(df_cl_avec_total, use_container_width=True, hide_index=True)
+            
+            # دالة تلوين السطور: الأحمر للإقامات اللي وصل خلاصها، والأخضر لسطر المجموع
+            def colorer_lignes_clients(row):
+                nom_r = str(row["Résidence"]).strip()
+                if nom_r in clients_en_retard:
+                    return ['background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'] * len(row)
+                elif "TOTAL" in nom_r:
+                    return ['background-color: #e8f5e9; color: #1b5e20; font-weight: bold;'] * len(row)
+                return [''] * len(row)
+
+            styled_df = df_cl_avec_total.style.apply(colorer_lignes_clients, axis=1).format({"Prix (MAD)": "{:,.0f} MAD"})
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
             st.success(f"💵 **مجموع الأموال الشهرية الثابتة في العقود (MRR):** `{total_contrats_mad:,.2f} MAD / Mois`")
         else:
             st.info("لا توجد إقامات مسجلة حالياً.")
@@ -490,7 +519,7 @@ elif menu == "Nouveau Client":
             res_nom = st.text_input("🏢 اسم الإقامة (Résidence)")
             secteur = st.text_input("📍 الحي / المنطقة (Secteur - مثال: المعمورة، ميموزا)")
             resp = st.text_input("👤 اسم السانديك (Responsable)")
-            tel = st.text_input("📞 رقم الهاتف (Téléphone)")
+            tel = st.text_input("📞 رقم الهاتف (مثال: 0661234567 أو 212661234567 بدون +)")
         with c2:
             freq_srv = st.selectbox("🔄 عدد المرات فـ الأسبوع (الوتيرة)", [
                 "1 fois/semaine (4/mois)", 
@@ -513,7 +542,7 @@ elif menu == "Nouveau Client":
                     "Résidence": [res_nom],
                     "Secteur": [secteur],
                     "Responsable": [resp],
-                    "Téléphone": [tel],
+                    "Téléphone": [nettoyer_texte_gsheet(tel)],
                     "Services": [srv_str],
                     "Produits": [produits],
                     "Prix (MAD)": [prix],
@@ -533,13 +562,66 @@ elif menu == "Gérer les clients":
     df_clients = load_data("Clients", COLS_CLIENTS)
     
     if not df_clients.empty:
-        st.info("💡 يمكنك تعديل أي معلومة مباشرة في الجدول أسفله أو مسح سطر، ثم الضغط على **حفظ التعديلات**.")
-        edited_df = st.data_editor(df_clients, num_rows="dynamic", use_container_width=True)
+        # --- 1. أداة التعديل السريع والمضمون (ممتازة للهاتف) ---
+        with st.expander("📱 تعديل سريع لزبون (سهل ومضمون من الهاتف)", expanded=True):
+            liste_res = df_clients["Résidence"].tolist()
+            res_a_modifier = st.selectbox("🎯 اختر الإقامة التي تريد تعديل معلوماتها:", liste_res)
+            
+            if res_a_modifier:
+                idx_mod = df_clients[df_clients["Résidence"] == res_a_modifier].index[0]
+                row_mod = df_clients.loc[idx_mod]
+                
+                with st.form("form_modif_rapide"):
+                    mc1, mc2 = st.columns(2)
+                    with mc1:
+                        nv_nom_r = st.text_input("🏢 اسم الإقامة", value=str(row_mod["Résidence"]))
+                        nv_sec_r = st.text_input("📍 الحي / المنطقة", value=str(row_mod["Secteur"]))
+                        nv_resp_r = st.text_input("👤 اسم السانديك", value=str(row_mod["Responsable"]))
+                        nv_tel_r = st.text_input("📞 رقم الهاتف (بدون +)", value=str(row_mod["Téléphone"]))
+                    with mc2:
+                        nv_srv_r = st.text_input("🧹 الخدمات والوتيرة", value=str(row_mod["Services"]))
+                        nv_prod_r = st.text_input("🧴 مواد النظافة", value=str(row_mod["Produits"]))
+                        prix_actuel = int(pd.to_numeric(row_mod["Prix (MAD)"], errors='coerce') or 0)
+                        nv_prix_r = st.number_input("💰 الثمن الشهري (MAD)", value=prix_actuel, step=50)
+                        nv_jour_r = st.text_input("📅 يوم الأداء", value=str(row_mod["Jour de paiement"]))
+                        
+                    if st.form_submit_button("✅ حفظ تعديلات هذه الإقامة", use_container_width=True):
+                        df_clients.at[idx_mod, "Résidence"] = nv_nom_r
+                        df_clients.at[idx_mod, "Secteur"] = nv_sec_r
+                        df_clients.at[idx_mod, "Responsable"] = nv_resp_r
+                        df_clients.at[idx_mod, "Téléphone"] = nettoyer_texte_gsheet(nv_tel_r)
+                        df_clients.at[idx_mod, "Services"] = nv_srv_r
+                        df_clients.at[idx_mod, "Produits"] = nv_prod_r
+                        df_clients.at[idx_mod, "Prix (MAD)"] = nv_prix_r
+                        df_clients.at[idx_mod, "Jour de paiement"] = nv_jour_r
+                        save_data("Clients", df_clients)
+                        st.success(f"✔️ تم تحديث معلومات **{nv_nom_r}** بنجاح!")
+                        st.rerun()
+
+        st.markdown("---")
+        # --- 2. الجدول الشامل (مع إصلاح عمود الهاتف باش يتعدل مباشرة) ---
+        st.subheader("📋 الجدول الشامل لجميع الإقامات")
+        st.info("💡 يمكنك أيضاً التعديل مباشرة في الجدول أو مسح سطر، ثم الضغط على **حفظ التعديلات**.")
+        
+        df_clients["Téléphone"] = df_clients["Téléphone"].astype(str)
+        df_clients["Prix (MAD)"] = pd.to_numeric(df_clients["Prix (MAD)"], errors='coerce').fillna(0)
+        
+        edited_df = st.data_editor(
+            df_clients, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            column_config={
+                "Téléphone": st.column_config.TextColumn("📞 Téléphone"),
+                "Résidence": st.column_config.TextColumn("🏢 Résidence"),
+                "Responsable": st.column_config.TextColumn("👤 Responsable"),
+                "Prix (MAD)": st.column_config.NumberColumn("💰 Prix (MAD)", min_value=0, step=50)
+            }
+        )
         
         total_c = pd.to_numeric(edited_df["Prix (MAD)"], errors='coerce').fillna(0).sum()
         st.markdown(f"#### 💰 المجموع الإجمالي للعقود في الجدول: **`{total_c:,.2f} MAD / Mois`**")
         
-        if st.button("💾 حفظ التعديلات (Enregistrer)", use_container_width=True):
+        if st.button("💾 حفظ تعديلات الجدول (Enregistrer)", use_container_width=True):
             save_data("Clients", edited_df)
             st.success("✔️ تم تحديث بيانات الزبناء بنجاح!")
             st.rerun()
@@ -562,27 +644,38 @@ elif menu == "Pointage & Paiements":
     with tab1:
         if not df_clients.empty:
             for idx, client_row in df_clients.iterrows():
-                nom_res = client_row["Résidence"]
+                nom_res = str(client_row["Résidence"]).strip()
                 prix_res = pd.to_numeric(client_row["Prix (MAD)"], errors='coerce') or 0
                 cible = calculer_cible_passages(client_row.get("Services", ""))
                 
                 nb_attente = 0
                 if not df_hist.empty:
-                    nb_attente = len(df_hist[(df_hist["Résidence"] == nom_res) & (df_hist["Statut"] == "En attente")])
+                    nb_attente = len(df_hist[(df_hist["Résidence"].astype(str).str.strip() == nom_res) & (df_hist["Statut"] == "En attente")])
                 
+                est_en_retard = (nb_attente >= cible)
+                
+                # تلوين الخلفية بالأحمر الفاتح إذا وصل وقت الخلاص
+                if est_en_retard:
+                    st.markdown(f"""
+                    <div style="background-color: #ffebee; border: 2px solid #ef5350; padding: 10px 15px; border-radius: 8px; margin-bottom: 5px;">
+                        <span style="color: #c62828; font-weight: bold; font-size: 16px;">🚨 {nom_res} ({client_row.get('Secteur', '')}) — وصل وقت الأداء! ({prix_res} MAD)</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                 col_a, col_b, col_c = st.columns([3, 2, 2])
                 with col_a:
-                    st.markdown(f"**🏢 {nom_res}** ({client_row.get('Secteur', '')}) — *{prix_res} MAD/mois*")
+                    if not est_en_retard:
+                        st.markdown(f"**🏢 {nom_res}** ({client_row.get('Secteur', '')}) — *{prix_res} MAD/mois*")
                     pct_p = min(1.0, float(nb_attente / cible)) if cible > 0 else 0.0
                     st.progress(pct_p)
                 with col_b:
                     st.write(f"الحصص المنجزة: **{nb_attente} / {cible}**")
-                    if nb_attente >= cible:
-                        st.markdown("<span style='color:red; font-weight:bold;'>🚨 واجب الأداء!</span>", unsafe_allow_html=True)
+                    if est_en_retard:
+                        st.markdown("<span style='color:#d32f2f; font-weight:bold;'>🔴 واجب الأداء حالاً!</span>", unsafe_allow_html=True)
                 with col_c:
                     if st.button(f"💵 تأكيد استلام {prix_res} DH", key=f"pay_{idx}_{nom_res}", use_container_width=True):
                         if not df_hist.empty:
-                            df_hist.loc[(df_hist["Résidence"] == nom_res) & (df_hist["Statut"] == "En attente"), "Statut"] = "Payé"
+                            df_hist.loc[(df_hist["Résidence"].astype(str).str.strip() == nom_res) & (df_hist["Statut"] == "En attente"), "Statut"] = "Payé"
                             save_data("Historique", df_hist)
                         
                         nv_rev = pd.DataFrame({
@@ -913,7 +1006,7 @@ elif menu == "Gestion d'Équipe":
         
         if st.form_submit_button("➕ إضافة للفريق", use_container_width=True):
             if nom_e:
-                nv_e = pd.DataFrame({"Nom": [nom_e], "Téléphone": [tel_e], "Poste": [poste_e], "Photo": [""]})
+                nv_e = pd.DataFrame({"Nom": [nom_e], "Téléphone": [nettoyer_texte_gsheet(tel_e)], "Poste": [poste_e], "Photo": [""]})
                 df_emp = pd.concat([df_emp, nv_e], ignore_index=True)
                 save_data("Employes", df_emp)
                 st.success(f"تمت إضافة {nom_e} بنجاح!")
