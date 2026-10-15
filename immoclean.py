@@ -34,11 +34,16 @@ def init_gsheets():
 
 sh = init_gsheets()
 
-# --- دالة تنظيف أرقام الهاتف من + و = باش ما يطلعش #ERROR! فـ Google Sheets ---
+# --- دالة تنظيف وإصلاح أرقام الهاتف (كتحيد + وكتحافظ على 0 فـ اللول) ---
 def nettoyer_texte_gsheet(val):
     s = str(val).strip()
-    if s.startswith("+") or s.startswith("="):
-        return s.lstrip("+=").strip()
+    if s.startswith("+") or s.startswith("=") or s.startswith("'"):
+        s = s.lstrip("+='").strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    # إيلا طير Google Sheets الصفر وبقات 9 أرقام كتبدا بـ 6 أو 7 أو 5، نرجعو ليها 0 أوتوماتيكياً
+    if len(s) == 9 and s.isdigit() and s[0] in ["5", "6", "7"]:
+        s = "0" + s
     return s
 
 # --- دوال جلب وحفظ البيانات ---
@@ -51,9 +56,9 @@ def load_data(sheet_name, columns):
     for col in columns:
         if col not in df.columns:
             df[col] = ""
-    # تحويل عمود الهاتف دائماً إلى نص باش يتعدل بسهولة
+    # إصلاح وتحويل عمود الهاتف دائماً إلى نص مع استرجاع الصفر الأول
     if "Téléphone" in df.columns:
-        df["Téléphone"] = df["Téléphone"].astype(str)
+        df["Téléphone"] = df["Téléphone"].apply(nettoyer_texte_gsheet)
     return df
 
 def save_data(sheet_name, df):
@@ -62,7 +67,8 @@ def save_data(sheet_name, df):
     if "Téléphone" in df_clean.columns:
         df_clean["Téléphone"] = df_clean["Téléphone"].apply(nettoyer_texte_gsheet)
     ws.clear()
-    set_with_dataframe(ws, df_clean)
+    # string_escaping="full" كتمنع Google Sheets يحيد الصفر الأول من أرقام الهاتف
+    set_with_dataframe(ws, df_clean, string_escaping="full")
 
 # --- دالة حساب عدد الحصص المستهدفة فالشهر لكل إقامة ---
 def calculer_cible_passages(services_str):
@@ -519,7 +525,7 @@ elif menu == "Nouveau Client":
             res_nom = st.text_input("🏢 اسم الإقامة (Résidence)")
             secteur = st.text_input("📍 الحي / المنطقة (Secteur - مثال: المعمورة، ميموزا)")
             resp = st.text_input("👤 اسم السانديك (Responsable)")
-            tel = st.text_input("📞 رقم الهاتف (مثال: 0661234567 أو 212661234567 بدون +)")
+            tel = st.text_input("📞 رقم الهاتف (مثال: 0661234567)")
         with c2:
             freq_srv = st.selectbox("🔄 عدد المرات فـ الأسبوع (الوتيرة)", [
                 "1 fois/semaine (4/mois)", 
@@ -577,7 +583,7 @@ elif menu == "Gérer les clients":
                         nv_nom_r = st.text_input("🏢 اسم الإقامة", value=str(row_mod["Résidence"]))
                         nv_sec_r = st.text_input("📍 الحي / المنطقة", value=str(row_mod["Secteur"]))
                         nv_resp_r = st.text_input("👤 اسم السانديك", value=str(row_mod["Responsable"]))
-                        nv_tel_r = st.text_input("📞 رقم الهاتف (بدون +)", value=str(row_mod["Téléphone"]))
+                        nv_tel_r = st.text_input("📞 رقم الهاتف (مثال: 0661234567)", value=str(row_mod["Téléphone"]))
                     with mc2:
                         nv_srv_r = st.text_input("🧹 الخدمات والوتيرة", value=str(row_mod["Services"]))
                         nv_prod_r = st.text_input("🧴 مواد النظافة", value=str(row_mod["Produits"]))
