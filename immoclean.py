@@ -41,7 +41,6 @@ def nettoyer_texte_gsheet(val):
         s = s.lstrip("+='").strip()
     if s.endswith(".0"):
         s = s[:-2]
-    # إيلا طير Google Sheets الصفر وبقات 9 أرقام كتبدا بـ 6 أو 7 أو 5، نرجعو ليها 0 أوتوماتيكياً
     if len(s) == 9 and s.isdigit() and s[0] in ["5", "6", "7"]:
         s = "0" + s
     return s
@@ -56,7 +55,6 @@ def load_data(sheet_name, columns):
     for col in columns:
         if col not in df.columns:
             df[col] = ""
-    # إصلاح وتحويل عمود الهاتف دائماً إلى نص مع استرجاع الصفر الأول
     if "Téléphone" in df.columns:
         df["Téléphone"] = df["Téléphone"].apply(nettoyer_texte_gsheet)
     return df
@@ -67,7 +65,6 @@ def save_data(sheet_name, df):
     if "Téléphone" in df_clean.columns:
         df_clean["Téléphone"] = df_clean["Téléphone"].apply(nettoyer_texte_gsheet)
     ws.clear()
-    # string_escaping="full" كتمنع Google Sheets يحيد الصفر الأول من أرقام الهاتف
     set_with_dataframe(ws, df_clean, string_escaping="full")
 
 # --- دالة حساب عدد الحصص المستهدفة فالشهر لكل إقامة ---
@@ -238,7 +235,6 @@ if menu == "Tableau de bord":
     total_clients = len(df_clients) if not df_clients.empty else 0
     total_employes = len(df_emp) if not df_emp.empty else 0
     
-    # حساب مجموع الأموال في العقود الشهرية (Total Contrats)
     total_contrats_mad = 0
     if not df_clients.empty and "Prix (MAD)" in df_clients.columns:
         total_contrats_mad = pd.to_numeric(df_clients["Prix (MAD)"], errors='coerce').fillna(0).sum()
@@ -260,7 +256,6 @@ if menu == "Tableau de bord":
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
     solde_net = total_revenus - total_depenses
     
-    # عرض البطاقات الخمسة الفوق
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric(label="🏢 إجمالي الإقامات", value=f"{total_clients}")
     with col2: st.metric(label="📜 قيمة العقود الشهرية", value=f"{total_contrats_mad:,.0f} MAD")
@@ -268,7 +263,6 @@ if menu == "Tableau de bord":
     with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{total_revenus:,.0f} MAD")
     with col5: st.metric(label="💎 الصافي (Solde Net)", value=f"{solde_net:,.0f} MAD")
     
-    # تنبيه أحمر بارز للإقامات اللي وصلات لوقت الخلاص
     if clients_en_retard:
         st.markdown(f"""
         <div style="background-color: #ffebee; border-left: 6px solid #d32f2f; padding: 15px; border-radius: 8px; margin: 15px 0;">
@@ -279,13 +273,11 @@ if menu == "Tableau de bord":
 
     st.markdown("---")
     
-    # --- جدول الإقامات المتعاقد معها مع تلوين الإقامات اللي وصل خلاصها بالأحمر ---
     with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (الإقامات باللون الأحمر وصل وقت خلاصها 🚨)", expanded=True):
         if not df_clients.empty:
             df_cl_display = df_clients.copy()
             df_cl_display["Prix (MAD)"] = pd.to_numeric(df_cl_display["Prix (MAD)"], errors='coerce').fillna(0)
             
-            # إنشاء سطر المجموع في آخر الجدول
             total_row = pd.DataFrame({
                 "Résidence": ["💰 المجموع الإجمالي للعقود (TOTAL)"],
                 "Secteur": [f"{total_clients} إقامات"],
@@ -299,7 +291,6 @@ if menu == "Tableau de bord":
             
             df_cl_avec_total = pd.concat([df_cl_display, total_row], ignore_index=True)
             
-            # دالة تلوين السطور: الأحمر للإقامات اللي وصل خلاصها، والأخضر لسطر المجموع
             def colorer_lignes_clients(row):
                 nom_r = str(row["Résidence"]).strip()
                 if nom_r in clients_en_retard:
@@ -568,7 +559,6 @@ elif menu == "Gérer les clients":
     df_clients = load_data("Clients", COLS_CLIENTS)
     
     if not df_clients.empty:
-        # --- 1. أداة التعديل السريع والمضمون (ممتازة للهاتف) ---
         with st.expander("📱 تعديل سريع لزبون (سهل ومضمون من الهاتف)", expanded=True):
             liste_res = df_clients["Résidence"].tolist()
             res_a_modifier = st.selectbox("🎯 اختر الإقامة التي تريد تعديل معلوماتها:", liste_res)
@@ -605,7 +595,6 @@ elif menu == "Gérer les clients":
                         st.rerun()
 
         st.markdown("---")
-        # --- 2. الجدول الشامل (مع إصلاح عمود الهاتف باش يتعدل مباشرة) ---
         st.subheader("📋 الجدول الشامل لجميع الإقامات")
         st.info("💡 يمكنك أيضاً التعديل مباشرة في الجدول أو مسح سطر، ثم الضغط على **حفظ التعديلات**.")
         
@@ -660,7 +649,6 @@ elif menu == "Pointage & Paiements":
                 
                 est_en_retard = (nb_attente >= cible)
                 
-                # تلوين الخلفية بالأحمر الفاتح إذا وصل وقت الخلاص
                 if est_en_retard:
                     st.markdown(f"""
                     <div style="background-color: #ffebee; border: 2px solid #ef5350; padding: 10px 15px; border-radius: 8px; margin-bottom: 5px;">
@@ -744,9 +732,6 @@ elif menu == "Finances & Trésorerie":
     else:
         df_fin = pd.DataFrame(columns=COLS_FIN)
 
-    # ----------------------------------------------------------
-    # 🏦 1. ميزانية التأسيس المشتركة (10,000 DH : Driss & Younes)
-    # ----------------------------------------------------------
     BUDGET_TOTAL = 10000.0
     BUDGET_DRISS_INIT = 5000.0
     BUDGET_YOUNES_INIT = 5000.0
@@ -791,9 +776,6 @@ elif menu == "Finances & Trésorerie":
 
     st.markdown("---")
 
-    # ----------------------------------------------------------
-    # 📊 2. ملخص صندوق الشركة العام (Caisse & Opérations)
-    # ----------------------------------------------------------
     total_entrees = df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"].sum()
     total_sorties = df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"].sum()
     solde_caisse = total_entrees - total_sorties
@@ -805,9 +787,6 @@ elif menu == "Finances & Trésorerie":
 
     st.markdown("---")
 
-    # ----------------------------------------------------------
-    # ➕ 3. إضافة عملية مالية جديدة (مصروف أو مدخول)
-    # ----------------------------------------------------------
     st.subheader("➕ تسجيل عملية مالية جديدة")
     with st.form("form_ajout_finance", clear_on_submit=True):
         f_col1, f_col2 = st.columns(2)
@@ -854,9 +833,6 @@ elif menu == "Finances & Trésorerie":
 
     st.markdown("---")
 
-    # ----------------------------------------------------------
-    # 📋 4. جدول تتبع العمليات مع الفلتر
-    # ----------------------------------------------------------
     st.subheader("📋 سجل الحسابات التفصيلي")
     if not df_fin.empty:
         filtre_p = st.radio("🔍 فلتر حسب المصدر:", ["الكل", "مصاريف Driss", "مصاريف Younes", "Caisse (صندوق الشركة)"], horizontal=True)
@@ -1022,64 +998,208 @@ elif menu == "Gestion d'Équipe":
         st.dataframe(df_emp, use_container_width=True)
 
 # ==========================================
-# 9. Planning
+# 9. Planning (مع جدول استعمال الزمان الاحترافي للهاتف)
 # ==========================================
 elif menu == "Planning":
-    st.header("📅 البرمجة الأسبوعية والرادار الذكي (Planning)")
+    st.header("📅 استعمال الزمان والبرمجة الأسبوعية (Planning)")
     
     df_plan = load_data("Planning", COLS_PLAN)
     df_clients = load_data("Clients", COLS_CLIENTS)
     df_emp = load_data("Employes", COLS_EMP)
     
-    with st.form("form_plan"):
-        st.subheader("➕ برمجة حصة جديدة")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            emp_p = st.selectbox("👩‍🔧 العاملة", df_emp["Nom"].tolist() if not df_emp.empty else ["خديجة"])
-            client_p = st.selectbox("🏢 الإقامة", df_clients["Résidence"].tolist() if not df_clients.empty else [""])
-            jour_p = st.selectbox("📆 يوم العمل", [
-                "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", 
-                "Tous les jours (Sauf Dimanche)", "Tous les jours"
-            ])
-        with c2:
-            h_deb_p = st.time_input("🕒 وقت البداية", datetime.time(9, 0))
-            h_fin_p = st.time_input("🕒 وقت النهاية", datetime.time(11, 0))
-            date_deb_p = st.date_input("📅 تاريخ بداية العقد", datetime.date.today())
-        with c3:
-            freq_p = st.selectbox("🔄 التكرار", ["Chaque semaine", "1 semaine sur 2", "1 fois par mois"])
-            couleur_p = st.color_picker("🎨 لون البطاقة", "#1E88E5")
+    # جلب لائحة العاملات من جدول Employes + جدول Planning
+    liste_employes = []
+    if not df_emp.empty and "Nom" in df_emp.columns:
+        liste_employes.extend([str(x).strip() for x in df_emp["Nom"].tolist() if str(x).strip()])
+    if not df_plan.empty and "Employe" in df_plan.columns:
+        for e in df_plan["Employe"].unique():
+            if str(e).strip() and str(e).strip() not in liste_employes:
+                liste_employes.append(str(e).strip())
+    if not liste_employes:
+        liste_employes = ["Fatime zehra"]
+
+    # ----------------------------------------------------------
+    # 🗓️ 1. جدول استعمال الزمان (Emploi du Temps)
+    # ----------------------------------------------------------
+    st.subheader("🗓️ جدول استعمال الزمان الأسبوعي (Emploi du Temps)")
+    
+    col_sel1, col_sel2 = st.columns([1, 1])
+    with col_sel1:
+        emp_choisie = st.selectbox("👩‍🔧 اختر العاملة لعرض استعمال الزمان الخاص بها:", liste_employes)
+    with col_sel2:
+        mode_affichage = st.radio(
+            "📐 طريقة عرض الجدول:", 
+            ["📱 عرض الهاتف (الأيام في الجنب + 3 خانات)", "💻 عرض أفقي (الأيام الفوق + 3 خانات تحتها)"], 
+            horizontal=True
+        )
+
+    jours_ordre = [
+        ("Lundi", "الإثنين"),
+        ("Mardi", "الثلاثاء"),
+        ("Mercredi", "الأربعاء"),
+        ("Jeudi", "الخميس"),
+        ("Vendredi", "الجمعة"),
+        ("Samedi", "السبت"),
+        ("Dimanche", "الأحد")
+    ]
+
+    # تحضير الـ 3 خانات لكل يوم من أيام الأسبوع للعاملة المختارة
+    emploi_dict = {j_fr: [] for j_fr, _ in jours_ordre}
+    
+    if not df_plan.empty:
+        df_emp_plan = df_plan[(df_plan["Employe"].astype(str).str.strip() == emp_choisie) & (df_plan["Frequence"] != "Exception")].copy()
+        if not df_emp_plan.empty:
+            df_emp_plan = df_emp_plan.sort_values(by="Heure_Debut")
+            for _, r_p in df_emp_plan.iterrows():
+                j_row = str(r_p.get("Jour", "")).strip()
+                cl_nom = str(r_p.get("Client", "")).strip()
+                h_d = str(r_p.get("Heure_Debut", "")).strip()
+                h_f = str(r_p.get("Heure_Fin", "")).strip()
+                coul = str(r_p.get("Couleur", "#1E88E5")).strip() or "#1E88E5"
+                freq_t = str(r_p.get("Frequence", "Chaque semaine")).strip()
+                freq_badge = " (1/2)" if "2" in freq_t else (" (1/شهر)" if "mois" in freq_t else "")
+                
+                cell_info = {
+                    "client": cl_nom + freq_badge,
+                    "time": f"{h_d} - {h_f}",
+                    "color": coul
+                }
+                
+                for j_fr, _ in jours_ordre:
+                    if j_row == j_fr or j_row == "Tous les jours" or (j_row == "Tous les jours (Sauf Dimanche)" and j_fr != "Dimanche"):
+                        emploi_dict[j_fr].append(cell_info)
+
+    # دالة بناء محتوى الخانة (Slot)
+    def render_slot_html(slot_data):
+        if slot_data is None:
+            return '<div style="color: #bbb; font-size: 12px; padding: 10px 2px;">— فارغ —</div>'
+        return f'''
+        <div style="background-color: {slot_data['color']}18; border-right: 4px solid {slot_data['color']}; border-radius: 6px; padding: 6px 4px; margin: 2px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="font-weight: bold; font-size: 12px; color: #111; line-height: 1.2; word-wrap: break-word;">🏢 {slot_data['client']}</div>
+            <div style="font-size: 10px; color: {slot_data['color']}; font-weight: bold; margin-top: 3px;">🕒 {slot_data['time']}</div>
+        </div>
+        '''
+
+    # بناء جدول HTML على قد شاشة الهاتف 100%
+    if "📱" in mode_affichage:
+        # العرض المخصص للهاتف: الأيام في الجنب، وقدام كل نهار 3 خانات (حصة 1، حصة 2، حصة 3) كتشد عرض الهاتف كامل
+        html_table = f"""
+        <div style="width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background: white; margin-bottom: 20px; border: 1px solid #dce1e7;">
+            <div style="background: linear-gradient(90deg, #0b3d91, #1E88E5); color: white; text-align: center; padding: 12px; font-size: 18px; font-weight: bold;">
+                👩‍🔧 استعمال الزمان الأسبوعي : {emp_choisie}
+            </div>
+            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; text-align: center; direction: rtl;">
+                <thead>
+                    <tr style="background-color: #f1f5f9; color: #0b3d91; font-size: 12px; border-bottom: 2px solid #cbd5e1;">
+                        <th style="width: 22%; padding: 8px 4px; border-left: 1px solid #e2e8f0;">اليوم</th>
+                        <th style="width: 26%; padding: 8px 4px; border-left: 1px solid #e2e8f0;">حصة 1 (الصباح)</th>
+                        <th style="width: 26%; padding: 8px 4px; border-left: 1px solid #e2e8f0;">حصة 2 (الظهر)</th>
+                        <th style="width: 26%; padding: 8px 4px;">حصة 3 (العشية)</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        for j_fr, j_ar in jours_ordre:
+            tasks_j = emploi_dict[j_fr]
+            s1 = tasks_j[0] if len(tasks_j) > 0 else None
+            s2 = tasks_j[1] if len(tasks_j) > 1 else None
+            s3 = tasks_j[2] if len(tasks_j) > 2 else None
             
-        if st.form_submit_button("✅ إضافة للبرنامج (مع فحص التداخل)", use_container_width=True):
-            if client_p:
-                conflit, msg = verifier_conflit_ajout(df_plan, emp_p, jour_p, h_deb_p, h_fin_p, date_deb_p, freq_p)
-                if conflit:
-                    st.error(msg)
-                else:
-                    nv_p = pd.DataFrame({
-                        "Employe": [emp_p],
-                        "Client": [client_p],
-                        "Jour": [jour_p],
-                        "Heure_Debut": [h_deb_p.strftime("%H:%M")],
-                        "Heure_Fin": [h_fin_p.strftime("%H:%M")],
-                        "Date_Debut": [str(date_deb_p)],
-                        "Frequence": [freq_p],
-                        "Couleur": [couleur_p],
-                        "Statut": ["Actif"]
-                    })
-                    df_plan = pd.concat([df_plan, nv_p], ignore_index=True)
-                    save_data("Planning", df_plan)
-                    st.success(f"✔️ تمت برمجة **{client_p}** يوم **{jour_p}** بنجاح!")
-                    st.rerun()
-            else:
-                st.warning("المرجو اختيار إقامة.")
+            html_table += f"""
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="background-color: #f8fafc; font-weight: bold; font-size: 12px; color: #0b3d91; padding: 6px 2px; border-left: 1px solid #e2e8f0;">
+                    {j_ar}<br><span style="font-size: 10px; color: #64748b; font-weight: normal;">{j_fr}</span>
+                </td>
+                <td style="padding: 4px 2px; border-left: 1px solid #e2e8f0; vertical-align: middle;">{render_slot_html(s1)}</td>
+                <td style="padding: 4px 2px; border-left: 1px solid #e2e8f0; vertical-align: middle;">{render_slot_html(s2)}</td>
+                <td style="padding: 4px 2px; vertical-align: middle;">{render_slot_html(s3)}</td>
+            </tr>
+            """
+        html_table += "</tbody></table></div>"
+        st.markdown(html_table, unsafe_allow_html=True)
+
+    else:
+        # العرض الأفقي: الأيام الفوق، وتحت كل نهار 3 خانات (حصة 1، حصة 2، حصة 3)
+        html_table = f"""
+        <div style="width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background: white; margin-bottom: 20px; border: 1px solid #dce1e7;">
+            <div style="background: linear-gradient(90deg, #0b3d91, #1E88E5); color: white; text-align: center; padding: 12px; font-size: 18px; font-weight: bold;">
+                👩‍🔧 استعمال الزمان الأسبوعي : {emp_choisie}
+            </div>
+            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; text-align: center;">
+                <thead>
+                    <tr style="background-color: #f1f5f9; color: #0b3d91; font-size: 11px; border-bottom: 2px solid #cbd5e1;">
+        """
+        for j_fr, j_ar in jours_ordre:
+            html_table += f'<th style="padding: 6px 2px; border-right: 1px solid #e2e8f0;">{j_ar}<br><span style="font-size:9px; color:#64748b;">{j_fr[:3]}</span></th>'
+        html_table += "</tr></thead><tbody>"
+        
+        for slot_idx in range(3):
+            html_table += '<tr style="border-bottom: 1px solid #e2e8f0;">'
+            for j_fr, _ in jours_ordre:
+                tasks_j = emploi_dict[j_fr]
+                s_data = tasks_j[slot_idx] if len(tasks_j) > slot_idx else None
+                html_table += f'<td style="padding: 4px 1px; border-right: 1px solid #e2e8f0; vertical-align: middle;">{render_slot_html(s_data)}</td>'
+            html_table += '</tr>'
+            
+        html_table += "</tbody></table></div>"
+        st.markdown(html_table, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.subheader("📋 جدول الحصص المبرمجة (يمكنك التعديل أو الحذف مباشرة)")
-    if not df_plan.empty:
-        edited_plan = st.data_editor(df_plan, num_rows="dynamic", use_container_width=True)
-        if st.button("💾 حفظ تعديلات البلانينغ", use_container_width=True):
-            save_data("Planning", edited_plan)
-            st.success("✔️ تم تحديث البلانينغ بنجاح!")
-            st.rerun()
-    else:
-        st.info("لا توجد حصص مبرمجة حالياً.")
+
+    # ----------------------------------------------------------
+    # ➕ 2. برمجة حصة جديدة في استعمال الزمان
+    # ----------------------------------------------------------
+    with st.expander("➕ إضافة حصة جديدة لاستعمال الزمان (برمجة إقامة)", expanded=False):
+        with st.form("form_plan"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                emp_p = st.selectbox("👩‍🔧 العاملة", liste_employes)
+                client_p = st.selectbox("🏢 الإقامة", df_clients["Résidence"].tolist() if not df_clients.empty else [""])
+                jour_p = st.selectbox("📆 يوم العمل", [
+                    "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", 
+                    "Tous les jours (Sauf Dimanche)", "Tous les jours"
+                ])
+            with c2:
+                h_deb_p = st.time_input("🕒 وقت البداية", datetime.time(9, 0))
+                h_fin_p = st.time_input("🕒 وقت النهاية", datetime.time(11, 0))
+                date_deb_p = st.date_input("📅 تاريخ بداية العقد", datetime.date.today())
+            with c3:
+                freq_p = st.selectbox("🔄 التكرار", ["Chaque semaine", "1 semaine sur 2", "1 fois par mois"])
+                couleur_p = st.color_picker("🎨 لون البطاقة", "#1E88E5")
+                
+            if st.form_submit_button("✅ إضافة للبرنامج (مع فحص التداخل)", use_container_width=True):
+                if client_p:
+                    conflit, msg = verifier_conflit_ajout(df_plan, emp_p, jour_p, h_deb_p, h_fin_p, date_deb_p, freq_p)
+                    if conflit:
+                        st.error(msg)
+                    else:
+                        nv_p = pd.DataFrame({
+                            "Employe": [emp_p],
+                            "Client": [client_p],
+                            "Jour": [jour_p],
+                            "Heure_Debut": [h_deb_p.strftime("%H:%M")],
+                            "Heure_Fin": [h_fin_p.strftime("%H:%M")],
+                            "Date_Debut": [str(date_deb_p)],
+                            "Frequence": [freq_p],
+                            "Couleur": [couleur_p],
+                            "Statut": ["Actif"]
+                        })
+                        df_plan = pd.concat([df_plan, nv_p], ignore_index=True)
+                        save_data("Planning", df_plan)
+                        st.success(f"✔️ تمت برمجة **{client_p}** يوم **{jour_p}** بنجاح!")
+                        st.rerun()
+                else:
+                    st.warning("المرجو اختيار إقامة.")
+
+    # ----------------------------------------------------------
+    # ✏️ 3. تعديل أو حذف الحصص المبرمجة
+    # ----------------------------------------------------------
+    with st.expander("📋 تعديل أو حذف الحصص المبرمجة (الجدول التفصيلي)", expanded=False):
+        if not df_plan.empty:
+            edited_plan = st.data_editor(df_plan, num_rows="dynamic", use_container_width=True)
+            if st.button("💾 حفظ تعديلات البلانينغ", use_container_width=True):
+                save_data("Planning", edited_plan)
+                st.success("✔️ تم تحديث البلانينغ بنجاح!")
+                st.rerun()
+        else:
+            st.info("لا توجد حصص مبرمجة حالياً.")
