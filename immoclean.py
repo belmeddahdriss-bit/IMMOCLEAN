@@ -998,7 +998,7 @@ elif menu == "Gestion d'Équipe":
         st.dataframe(df_emp, use_container_width=True)
 
 # ==========================================
-# 9. Planning (استعمال الزمان الاحترافي والمنظم)
+# 9. Planning (جدول استعمال الزمان: الأيام الفوق والحصص تحتها)
 # ==========================================
 elif menu == "Planning":
     st.header("📅 استعمال الزمان الأسبوعي (Emploi du Temps)")
@@ -1018,7 +1018,7 @@ elif menu == "Planning":
         liste_employes = ["Fatime zehra"]
 
     st.subheader("🗓️ جدول استعمال الزمان")
-    emp_choisie = st.selectbox("👩‍🔧 اختر العاملة لعرض جدولها الأسبوعي:", liste_employes)
+    emp_choisie = st.selectbox("👩‍🔧 اختر العاملة لعرض جدولها:", liste_employes)
 
     jours_ordre = [
         ("Lundi", "الإثنين"),
@@ -1030,41 +1030,44 @@ elif menu == "Planning":
         ("Dimanche", "الأحد")
     ]
 
-    # تجميع الحصص لكل يوم
-    emploi_data = []
+    # جلب الحصص وتوزيعها بحيث الأيام هم الأعمدة الفوق
+    semaine_dict = {j_fr: [] for j_fr, _ in jours_ordre}
+    
     if not df_plan.empty:
         df_emp_plan = df_plan[(df_plan["Employe"].astype(str).str.strip() == emp_choisie) & (df_plan["Frequence"] != "Exception")].copy()
         if not df_emp_plan.empty:
             df_emp_plan = df_emp_plan.sort_values(by="Heure_Debut")
-            
-            for j_fr, j_ar in jours_ordre:
-                # فلترة حصص هاد النهار
-                taches_jour = []
-                for _, r_p in df_emp_plan.iterrows():
-                    j_row = str(r_p.get("Jour", "")).strip()
+            for _, r_p in df_emp_plan.iterrows():
+                j_row = str(r_p.get("Jour", "")).strip()
+                cl_nom = str(r_p.get("Client", "")).strip()
+                h_d = str(r_p.get("Heure_Debut", "")).strip()
+                h_f = str(r_p.get("Heure_Fin", "")).strip()
+                freq_t = str(r_p.get("Frequence", "Chaque semaine")).strip()
+                suffix = " (1/2)" if "2" in freq_t else (" (1/شهر)" if "mois" in freq_t else "")
+                
+                tache_str = f"🏢 {cl_nom}{suffix}\n🕒 {h_d} - {h_f}"
+                
+                for j_fr, _ in jours_ordre:
                     if j_row == j_fr or j_row == "Tous les jours" or (j_row == "Tous les jours (Sauf Dimanche)" and j_fr != "Dimanche"):
-                        cl_nom = str(r_p.get("Client", "")).strip()
-                        h_d = str(r_p.get("Heure_Debut", "")).strip()
-                        h_f = str(r_p.get("Heure_Fin", "")).strip()
-                        freq_t = str(r_p.get("Frequence", "Chaque semaine")).strip()
-                        suffix = " (1/2)" if "2" in freq_t else (" (1/شهر)" if "mois" in freq_t else "")
-                        taches_jour.append(f"🏢 {cl_nom}{suffix}\n🕒 {h_d} - {h_f}")
-                
-                # توزيع الحصص على 3 خانات (حصة 1، حصة 2، حصة 3)
-                s1 = taches_jour[0] if len(taches_jour) > 0 else "— فارغ —"
-                s2 = taches_jour[1] if len(taches_jour) > 1 else "— فارغ —"
-                s3 = taches_jour[2] if len(taches_jour) > 2 else "— فارغ —"
-                
-                emploi_data.append({
-                    "اليوم": f"{j_ar} ({j_fr})",
-                    "الحصة الأولى": s1,
-                    "الحصة الثانية": s2,
-                    "الحصة الثالثة": s3
-                })
+                        semaine_dict[j_fr].append(tache_str)
 
-    df_emploi_affiche = pd.DataFrame(emploi_data)
-    if not df_emploi_affiche.empty:
-        st.dataframe(df_emploi_affiche, use_container_width=True, hide_index=True)
+    # تحديد أقصى عدد حصص كاين فـ شي نهار باش نعرفو شحال من صف (Ligne) نديرو
+    max_lignes = max([len(v) for v in semaine_dict.values()]) if semaine_dict.values() else 0
+    max_lignes = max(max_lignes, 3) # على الأقل 3 صفوف
+
+    tableau_matrix = []
+    for i in range(max_lignes):
+        row_data = {}
+        for j_fr, j_ar in jours_ordre:
+            taches_liste = semaine_dict[j_fr]
+            row_data[f"{j_ar} ({j_fr})"] = taches_liste[i] if len(taches_liste) > i else "—"
+        tableau_matrix.append(row_data)
+
+    df_emploi_grid = pd.DataFrame(tableau_matrix)
+    
+    if not df_emploi_grid.empty:
+        st.markdown(f"### 📋 جدول الحصص الأسبوعي لـ : **{emp_choisie}**")
+        st.dataframe(df_emploi_grid, use_container_width=True, hide_index=True)
     else:
         st.info(f"لا توجد حصص مبرمجة حالياً لـ {emp_choisie}.")
 
