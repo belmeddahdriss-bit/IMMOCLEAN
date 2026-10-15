@@ -717,7 +717,7 @@ elif menu == "Pointage & Paiements":
             st.dataframe(df_hist.tail(20), use_container_width=True)
 
 # ==========================================
-# 5. Finances & Trésorerie (مع ميزانية Driss & Younes)
+# 5. Finances & Trésorerie
 # ==========================================
 elif menu == "Finances & Trésorerie":
     st.header("💰 التسيير المالي وتتبع رأس المال (Finances & Capital)")
@@ -998,16 +998,15 @@ elif menu == "Gestion d'Équipe":
         st.dataframe(df_emp, use_container_width=True)
 
 # ==========================================
-# 9. Planning (مع جدول استعمال الزمان الاحترافي للهاتف)
+# 9. Planning (استعمال الزمان الاحترافي والمنظم)
 # ==========================================
 elif menu == "Planning":
-    st.header("📅 استعمال الزمان والبرمجة الأسبوعية (Planning)")
+    st.header("📅 استعمال الزمان الأسبوعي (Emploi du Temps)")
     
     df_plan = load_data("Planning", COLS_PLAN)
     df_clients = load_data("Clients", COLS_CLIENTS)
     df_emp = load_data("Employes", COLS_EMP)
     
-    # جلب لائحة العاملات من جدول Employes + جدول Planning
     liste_employes = []
     if not df_emp.empty and "Nom" in df_emp.columns:
         liste_employes.extend([str(x).strip() for x in df_emp["Nom"].tolist() if str(x).strip()])
@@ -1018,20 +1017,8 @@ elif menu == "Planning":
     if not liste_employes:
         liste_employes = ["Fatime zehra"]
 
-    # ----------------------------------------------------------
-    # 🗓️ 1. جدول استعمال الزمان (Emploi du Temps)
-    # ----------------------------------------------------------
-    st.subheader("🗓️ جدول استعمال الزمان الأسبوعي (Emploi du Temps)")
-    
-    col_sel1, col_sel2 = st.columns([1, 1])
-    with col_sel1:
-        emp_choisie = st.selectbox("👩‍🔧 اختر العاملة لعرض استعمال الزمان الخاص بها:", liste_employes)
-    with col_sel2:
-        mode_affichage = st.radio(
-            "📐 طريقة عرض الجدول:", 
-            ["📱 عرض الهاتف (الأيام في الجنب + 3 خانات)", "💻 عرض أفقي (الأيام الفوق + 3 خانات تحتها)"], 
-            horizontal=True
-        )
+    st.subheader("🗓️ جدول استعمال الزمان")
+    emp_choisie = st.selectbox("👩‍🔧 اختر العاملة لعرض جدولها الأسبوعي:", liste_employes)
 
     jours_ordre = [
         ("Lundi", "الإثنين"),
@@ -1043,111 +1030,48 @@ elif menu == "Planning":
         ("Dimanche", "الأحد")
     ]
 
-    # تحضير الـ 3 خانات لكل يوم من أيام الأسبوع للعاملة المختارة
-    emploi_dict = {j_fr: [] for j_fr, _ in jours_ordre}
-    
+    # تجميع الحصص لكل يوم
+    emploi_data = []
     if not df_plan.empty:
         df_emp_plan = df_plan[(df_plan["Employe"].astype(str).str.strip() == emp_choisie) & (df_plan["Frequence"] != "Exception")].copy()
         if not df_emp_plan.empty:
             df_emp_plan = df_emp_plan.sort_values(by="Heure_Debut")
-            for _, r_p in df_emp_plan.iterrows():
-                j_row = str(r_p.get("Jour", "")).strip()
-                cl_nom = str(r_p.get("Client", "")).strip()
-                h_d = str(r_p.get("Heure_Debut", "")).strip()
-                h_f = str(r_p.get("Heure_Fin", "")).strip()
-                coul = str(r_p.get("Couleur", "#1E88E5")).strip() or "#1E88E5"
-                freq_t = str(r_p.get("Frequence", "Chaque semaine")).strip()
-                freq_badge = " (1/2)" if "2" in freq_t else (" (1/شهر)" if "mois" in freq_t else "")
-                
-                cell_info = {
-                    "client": cl_nom + freq_badge,
-                    "time": f"{h_d} - {h_f}",
-                    "color": coul
-                }
-                
-                for j_fr, _ in jours_ordre:
+            
+            for j_fr, j_ar in jours_ordre:
+                # فلترة حصص هاد النهار
+                taches_jour = []
+                for _, r_p in df_emp_plan.iterrows():
+                    j_row = str(r_p.get("Jour", "")).strip()
                     if j_row == j_fr or j_row == "Tous les jours" or (j_row == "Tous les jours (Sauf Dimanche)" and j_fr != "Dimanche"):
-                        emploi_dict[j_fr].append(cell_info)
+                        cl_nom = str(r_p.get("Client", "")).strip()
+                        h_d = str(r_p.get("Heure_Debut", "")).strip()
+                        h_f = str(r_p.get("Heure_Fin", "")).strip()
+                        freq_t = str(r_p.get("Frequence", "Chaque semaine")).strip()
+                        suffix = " (1/2)" if "2" in freq_t else (" (1/شهر)" if "mois" in freq_t else "")
+                        taches_jour.append(f"🏢 {cl_nom}{suffix}\n🕒 {h_d} - {h_f}")
+                
+                # توزيع الحصص على 3 خانات (حصة 1، حصة 2، حصة 3)
+                s1 = taches_jour[0] if len(taches_jour) > 0 else "— فارغ —"
+                s2 = taches_jour[1] if len(taches_jour) > 1 else "— فارغ —"
+                s3 = taches_jour[2] if len(taches_jour) > 2 else "— فارغ —"
+                
+                emploi_data.append({
+                    "اليوم": f"{j_ar} ({j_fr})",
+                    "الحصة الأولى": s1,
+                    "الحصة الثانية": s2,
+                    "الحصة الثالثة": s3
+                })
 
-    # دالة بناء محتوى الخانة (Slot)
-    def render_slot_html(slot_data):
-        if slot_data is None:
-            return '<div style="color: #bbb; font-size: 12px; padding: 10px 2px;">— فارغ —</div>'
-        return f'''
-        <div style="background-color: {slot_data['color']}18; border-right: 4px solid {slot_data['color']}; border-radius: 6px; padding: 6px 4px; margin: 2px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            <div style="font-weight: bold; font-size: 12px; color: #111; line-height: 1.2; word-wrap: break-word;">🏢 {slot_data['client']}</div>
-            <div style="font-size: 10px; color: {slot_data['color']}; font-weight: bold; margin-top: 3px;">🕒 {slot_data['time']}</div>
-        </div>
-        '''
-
-    # بناء جدول HTML على قد شاشة الهاتف 100%
-    if "📱" in mode_affichage:
-        # العرض المخصص للهاتف: الأيام في الجنب، وقدام كل نهار 3 خانات (حصة 1، حصة 2، حصة 3) كتشد عرض الهاتف كامل
-        html_table = f"""
-        <div style="width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background: white; margin-bottom: 20px; border: 1px solid #dce1e7;">
-            <div style="background: linear-gradient(90deg, #0b3d91, #1E88E5); color: white; text-align: center; padding: 12px; font-size: 18px; font-weight: bold;">
-                👩‍🔧 استعمال الزمان الأسبوعي : {emp_choisie}
-            </div>
-            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; text-align: center; direction: rtl;">
-                <thead>
-                    <tr style="background-color: #f1f5f9; color: #0b3d91; font-size: 12px; border-bottom: 2px solid #cbd5e1;">
-                        <th style="width: 22%; padding: 8px 4px; border-left: 1px solid #e2e8f0;">اليوم</th>
-                        <th style="width: 26%; padding: 8px 4px; border-left: 1px solid #e2e8f0;">حصة 1 (الصباح)</th>
-                        <th style="width: 26%; padding: 8px 4px; border-left: 1px solid #e2e8f0;">حصة 2 (الظهر)</th>
-                        <th style="width: 26%; padding: 8px 4px;">حصة 3 (العشية)</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
-        for j_fr, j_ar in jours_ordre:
-            tasks_j = emploi_dict[j_fr]
-            s1 = tasks_j[0] if len(tasks_j) > 0 else None
-            s2 = tasks_j[1] if len(tasks_j) > 1 else None
-            s3 = tasks_j[2] if len(tasks_j) > 2 else None
-            
-            html_table += f"""
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-                <td style="background-color: #f8fafc; font-weight: bold; font-size: 12px; color: #0b3d91; padding: 6px 2px; border-left: 1px solid #e2e8f0;">
-                    {j_ar}<br><span style="font-size: 10px; color: #64748b; font-weight: normal;">{j_fr}</span>
-                </td>
-                <td style="padding: 4px 2px; border-left: 1px solid #e2e8f0; vertical-align: middle;">{render_slot_html(s1)}</td>
-                <td style="padding: 4px 2px; border-left: 1px solid #e2e8f0; vertical-align: middle;">{render_slot_html(s2)}</td>
-                <td style="padding: 4px 2px; vertical-align: middle;">{render_slot_html(s3)}</td>
-            </tr>
-            """
-        html_table += "</tbody></table></div>"
-        st.markdown(html_table, unsafe_allow_html=True)
-
+    df_emploi_affiche = pd.DataFrame(emploi_data)
+    if not df_emploi_affiche.empty:
+        st.dataframe(df_emploi_affiche, use_container_width=True, hide_index=True)
     else:
-        # العرض الأفقي: الأيام الفوق، وتحت كل نهار 3 خانات (حصة 1، حصة 2، حصة 3)
-        html_table = f"""
-        <div style="width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background: white; margin-bottom: 20px; border: 1px solid #dce1e7;">
-            <div style="background: linear-gradient(90deg, #0b3d91, #1E88E5); color: white; text-align: center; padding: 12px; font-size: 18px; font-weight: bold;">
-                👩‍🔧 استعمال الزمان الأسبوعي : {emp_choisie}
-            </div>
-            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; text-align: center;">
-                <thead>
-                    <tr style="background-color: #f1f5f9; color: #0b3d91; font-size: 11px; border-bottom: 2px solid #cbd5e1;">
-        """
-        for j_fr, j_ar in jours_ordre:
-            html_table += f'<th style="padding: 6px 2px; border-right: 1px solid #e2e8f0;">{j_ar}<br><span style="font-size:9px; color:#64748b;">{j_fr[:3]}</span></th>'
-        html_table += "</tr></thead><tbody>"
-        
-        for slot_idx in range(3):
-            html_table += '<tr style="border-bottom: 1px solid #e2e8f0;">'
-            for j_fr, _ in jours_ordre:
-                tasks_j = emploi_dict[j_fr]
-                s_data = tasks_j[slot_idx] if len(tasks_j) > slot_idx else None
-                html_table += f'<td style="padding: 4px 1px; border-right: 1px solid #e2e8f0; vertical-align: middle;">{render_slot_html(s_data)}</td>'
-            html_table += '</tr>'
-            
-        html_table += "</tbody></table></div>"
-        st.markdown(html_table, unsafe_allow_html=True)
+        st.info(f"لا توجد حصص مبرمجة حالياً لـ {emp_choisie}.")
 
     st.markdown("---")
 
     # ----------------------------------------------------------
-    # ➕ 2. برمجة حصة جديدة في استعمال الزمان
+    # ➕ 2. برمجة حصة جديدة
     # ----------------------------------------------------------
     with st.expander("➕ إضافة حصة جديدة لاستعمال الزمان (برمجة إقامة)", expanded=False):
         with st.form("form_plan"):
