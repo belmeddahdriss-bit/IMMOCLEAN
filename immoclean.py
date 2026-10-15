@@ -51,6 +51,22 @@ def save_data(sheet_name, df):
     ws.clear()
     set_with_dataframe(ws, df)
 
+# --- دالة حساب عدد الحصص المستهدفة فالشهر لكل إقامة ---
+def calculer_cible_passages(services_str):
+    s = str(services_str).lower()
+    if "30/mois" in s or "7j/7" in s:
+        return 30
+    elif "26/mois" in s or "6j/7" in s or "tous les jours" in s or "quotidien" in s:
+        return 26
+    elif "3 fois" in s or "12/mois" in s:
+        return 12
+    elif "2 fois" in s or "8/mois" in s:
+        return 8
+    elif "2/mois" in s or "15 jours" in s:
+        return 2
+    else:
+        return 4
+
 # --- أسماء الأعمدة في كل ورقة ---
 COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix (MAD)", "Jour de paiement"]
 COLS_HIST = ["Date", "Résidence", "Employé", "Tâches", "Statut"]
@@ -69,7 +85,16 @@ def verifier_conflit_ajout(df_plan, emp, jour, h_deb, h_fin, d_deb, freq):
             continue
             
         r_jour = str(row.get("Jour", ""))
-        if r_jour == jour or r_jour == "Tous les jours" or jour == "Tous les jours":
+        match_jour = (
+            r_jour == jour or 
+            r_jour in ["Tous les jours", "Tous les jours (Sauf Dimanche)"] or 
+            jour in ["Tous les jours", "Tous les jours (Sauf Dimanche)"]
+        )
+        # استثناء يوم الأحد إيلا كانت المبرمجة غير من الاثنين للسبت
+        if (r_jour == "Tous les jours (Sauf Dimanche)" and jour == "Dimanche") or (jour == "Tous les jours (Sauf Dimanche)" and r_jour == "Dimanche"):
+            match_jour = False
+
+        if match_jour:
             try:
                 r_deb = datetime.datetime.strptime(str(row["Heure_Debut"]), "%H:%M").time()
                 r_fin = datetime.datetime.strptime(str(row["Heure_Fin"]), "%H:%M").time()
@@ -120,7 +145,12 @@ def verifier_conflit_report(df_plan, emp, date_cible, h_deb, h_fin):
                 continue
                 
             r_jour = str(row.get("Jour", ""))
-            if r_jour == nom_jour or r_jour == "Tous les jours":
+            jour_actif = (
+                r_jour == nom_jour or 
+                r_jour == "Tous les jours" or 
+                (r_jour == "Tous les jours (Sauf Dimanche)" and nom_jour != "Dimanche")
+            )
+            if jour_actif:
                 verif_rep = df_plan[(df_plan["Frequence"] == "Exception") & (df_plan["Client"] == row["Client"]) & (df_plan["Statut"] == f"Report:{date_str}")]
                 if not verif_rep.empty:
                     continue
@@ -201,11 +231,7 @@ if menu == "Tableau de bord":
     if not df_clients.empty and not df_hist.empty:
         for _, row in df_clients.iterrows():
             client = row["Résidence"]
-            services = str(row.get("Services", "")).lower()
-            
-            if "2 fois" in services: cible = 8
-            elif "2/mois" in services or "15 jours" in services: cible = 2
-            else: cible = 4
+            cible = calculer_cible_passages(row.get("Services", ""))
             
             passages_non_payes = len(df_hist[(df_hist["Résidence"] == client) & (df_hist["Statut"] == "En attente")])
             if passages_non_payes >= cible:
@@ -283,7 +309,14 @@ if menu == "Tableau de bord":
                         taches_jour.append(row)
                     continue
                 
-                if row["Jour"] == nom_jour_cible or row["Jour"] == "Tous les jours":
+                jour_row = str(row.get("Jour", ""))
+                jour_correspond = (
+                    jour_row == nom_jour_cible or 
+                    jour_row == "Tous les jours" or 
+                    (jour_row == "Tous les jours (Sauf Dimanche)" and nom_jour_cible != "Dimanche")
+                )
+                
+                if jour_correspond:
                     try:
                         d_debut = datetime.datetime.strptime(str(row["Date_Debut"]), "%Y-%m-%d").date()
                         sem_debut = d_debut.isocalendar()[1]
@@ -328,10 +361,7 @@ if menu == "Tableau de bord":
                         client_data = df_clients[df_clients["Résidence"] == client_nom]
                         if not client_data.empty:
                             services = str(client_data.iloc[0].get("Services", "")).lower()
-                            
-                            if "2 fois" in services: cible = 8
-                            elif "2/mois" in services or "15 jours" in services: cible = 2
-                            else: cible = 4
+                            cible = calculer_cible_passages(services)
                             
                             if not df_hist.empty:
                                 passages_non_payes = len(df_hist[(df_hist["Résidence"] == client_nom) & (df_hist["Statut"] == "En attente")])
@@ -462,7 +492,14 @@ elif menu == "Nouveau Client":
             resp = st.text_input("👤 اسم السانديك (Responsable)")
             tel = st.text_input("📞 رقم الهاتف (Téléphone)")
         with c2:
-            freq_srv = st.selectbox("🔄 عدد المرات فـ الأسبوع", ["1 fois/semaine (4/mois)", "2 fois/semaine (8/mois)", "1 fois/15 jours (2/mois)"])
+            freq_srv = st.selectbox("🔄 عدد المرات فـ الأسبوع (الوتيرة)", [
+                "1 fois/semaine (4/mois)", 
+                "2 fois/semaine (8/mois)", 
+                "3 fois/semaine (12/mois)",
+                "Tous les jours (6j/7 - 26/mois)",
+                "Tous les jours (7j/7 - 30/mois)",
+                "1 fois/15 jours (2/mois)"
+            ])
             zones_srv = st.multiselect("🧹 المرافق المشمولة", ["Escaliers", "Terrasse", "Sous-sol / Parking", "Bureau"], default=["Escaliers"])
             produits = st.selectbox("🧴 مواد النظافة (Produits)", ["Inclus (على حساب الشركة)", "Non inclus (على حساب السانديك)"])
             prix = st.number_input("💰 الثمن الشهري (MAD)", min_value=0, step=50, value=500)
@@ -499,7 +536,6 @@ elif menu == "Gérer les clients":
         st.info("💡 يمكنك تعديل أي معلومة مباشرة في الجدول أسفله أو مسح سطر، ثم الضغط على **حفظ التعديلات**.")
         edited_df = st.data_editor(df_clients, num_rows="dynamic", use_container_width=True)
         
-        # حساب وعرض المجموع مباشرة تحت الجدول أيضاً
         total_c = pd.to_numeric(edited_df["Prix (MAD)"], errors='coerce').fillna(0).sum()
         st.markdown(f"#### 💰 المجموع الإجمالي للعقود في الجدول: **`{total_c:,.2f} MAD / Mois`**")
         
@@ -528,11 +564,7 @@ elif menu == "Pointage & Paiements":
             for idx, client_row in df_clients.iterrows():
                 nom_res = client_row["Résidence"]
                 prix_res = pd.to_numeric(client_row["Prix (MAD)"], errors='coerce') or 0
-                srv_res = str(client_row.get("Services", "")).lower()
-                
-                if "2 fois" in srv_res: cible = 8
-                elif "2/mois" in srv_res or "15 jours" in srv_res: cible = 2
-                else: cible = 4
+                cible = calculer_cible_passages(client_row.get("Services", ""))
                 
                 nb_attente = 0
                 if not df_hist.empty:
@@ -810,7 +842,13 @@ elif menu == "Générer Devis":
     with c1:
         nom_prospect = st.text_input("🏢 اسم الإقامة (Prospect)")
         secteur_prospect = st.text_input("📍 المنطقة / الحي (Kénitra)")
-        freq_devis = st.selectbox("🔄 وتيرة النظافة المقترحة", ["1 passage par semaine (4/mois)", "2 passages par semaine (8/mois)"])
+        freq_devis = st.selectbox("🔄 وتيرة النظافة المقترحة", [
+            "1 passage par semaine (4/mois)", 
+            "2 passages par semaine (8/mois)",
+            "3 passages par semaine (12/mois)",
+            "Passage quotidien 6j/7 (26/mois)",
+            "Passage quotidien 7j/7 (30/mois)"
+        ])
     with c2:
         prix_devis = st.number_input("💰 الثمن الشهري المقترح (MAD)", value=600, step=50)
         prod_devis = st.selectbox("🧴 مواد النظافة", ["Produits inclus (A la charge d'ImmoClean)", "Produits non inclus"])
@@ -900,7 +938,10 @@ elif menu == "Planning":
         with c1:
             emp_p = st.selectbox("👩‍🔧 العاملة", df_emp["Nom"].tolist() if not df_emp.empty else ["خديجة"])
             client_p = st.selectbox("🏢 الإقامة", df_clients["Résidence"].tolist() if not df_clients.empty else [""])
-            jour_p = st.selectbox("📆 يوم العمل", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", "Tous les jours"])
+            jour_p = st.selectbox("📆 يوم العمل", [
+                "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche", 
+                "Tous les jours (Sauf Dimanche)", "Tous les jours"
+            ])
         with c2:
             h_deb_p = st.time_input("🕒 وقت البداية", datetime.time(9, 0))
             h_fin_p = st.time_input("🕒 وقت النهاية", datetime.time(11, 0))
