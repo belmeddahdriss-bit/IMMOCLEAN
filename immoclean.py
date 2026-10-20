@@ -980,7 +980,9 @@ elif menu == "Finances & Trésorerie":
     ).fillna(0)
 
     dep_driss = df_dep[
-        df_dep["Paye_Par"].astype(str).str.contains("Driss", case=False, na=False)
+        df_dep["Paye_Par"]
+        .astype(str)
+        .str.contains("Driss", case=False, na=False)
     ]["Montant (MAD)"].sum()
     dep_younnes = df_dep[
         df_dep["Paye_Par"]
@@ -1120,8 +1122,7 @@ elif menu == "Finances & Trésorerie":
         f" المبالغ فـ هاد الفلتر:** `{total_filtre:,.2f} MAD`"
     )
 
-    # إذا كان الفلتر على "الكل" كنسمحو بإضافة وحذف السطور، وإذا كان مفلتر كنعدلو السطور المعروضة بأمان
-     is_tout = (
+    is_tout = (
         filtre_personne == "الكل (Tous)"
         and filtre_type == "الكل (مداخيل + مصاريف)"
     )
@@ -1137,7 +1138,6 @@ elif menu == "Finances & Trésorerie":
       if is_tout:
         save_data("Finances", edited_fin)
       else:
-        # تحديث السطور المعدلة فـ الجدول الأصلي بلا ما يضيعو السطور المخفيين بالفلتر
         df_fin.update(edited_fin)
         save_data("Finances", df_fin)
       st.success("✅ تم حفظ التعديلات بنجاح!")
