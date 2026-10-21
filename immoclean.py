@@ -35,7 +35,7 @@ def init_gsheets():
 
 sh = init_gsheets()
 
-# --- دالة تنظيف وإصلاح أرقام الهاتف (كتحيد + وكتحافظ على 0 فـ اللول) ---
+# --- دالة تنظيف وإصلاح أرقام الهاتف ---
 def nettoyer_texte_gsheet(val):
     s = str(val).strip()
     if s.startswith("+") or s.startswith("=") or s.startswith("'"):
@@ -46,7 +46,7 @@ def nettoyer_texte_gsheet(val):
         s = "0" + s
     return s
 
-# --- دوال جلب وحفظ البيانات (مع حماية ضد انقطاع الاتصال وتنظيف السطور الخاوية) ---
+# --- دوال جلب وحفظ البيانات ---
 def load_data(sheet_name, columns):
     try:
         ws = sh.worksheet(sheet_name)
@@ -93,7 +93,7 @@ def calculer_cible_passages(services_str):
     else:
         return 4
 
-# --- دالة تنظيف النصوص للـ PDF (باش ما يتبلوكاش مع العربية أو الرموز) ---
+# --- دالة تنظيف النصوص للـ PDF ---
 def txt_pdf(texte):
     t = str(texte)
     remplacements = {
@@ -105,11 +105,14 @@ def txt_pdf(texte):
         "حصة شاملة": "Grand nettoyage",
         "الأحد": "Dimanche",
         "الإثنين": "Lundi",
+        "الاثنين": "Lundi",
         "الثلاثاء": "Mardi",
         "الأربعاء": "Mercredi",
         "الخميس": "Jeudi",
         "الجمعة": "Vendredi",
-        "السبت": "Samedi"
+        "السبت": "Samedi",
+        "عائشة": "Aicha",
+        "فاطمة الزهراء": "Fatima Zahra"
     }
     for ar, fr in remplacements.items():
         t = t.replace(ar, fr)
@@ -123,7 +126,7 @@ COLS_FIN = ["Date", "Type", "Categorie", "Montant (MAD)", "Description", "Paye_P
 COLS_PLAN = ["Employe", "Client", "Jour", "Heure_Debut", "Heure_Fin", "Date_Debut", "Frequence", "Couleur", "Statut"]
 
 # ===============================================================
-# 📅 كود الشبكة الأسبوعية (Planning en grille - Claude)
+# 📅 كود الشبكة الأسبوعية + توليد PDF (Planning en grille)
 # ===============================================================
 PALETTE = [
     "#1E88E5", "#E91E63", "#43A047", "#FB8C00", "#8E24AA",
@@ -285,6 +288,92 @@ def _carte_html(t, couleur, doublon):
         f"{badge_html}</div>"
     )
 
+# --- 📄 دالة توليد ملف PDF لاستعمال الزمن الأسبوعي (Landscape A4) ---
+def generer_planning_pdf(df_f, dates, sel_emp):
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+
+    pdf.set_font("Arial", "B", 16)
+    pdf.set_text_color(11, 61, 145)
+    pdf.cell(0, 8, "IMMOCLEAN FACILITY - PLANNING HEBDOMADAIRE", ln=True, align="C")
+
+    d_deb_str = dates[0].strftime('%d/%m/%Y')
+    d_fin_str = dates[-1].strftime('%d/%m/%Y')
+    emp_str = ", ".join(sel_emp) if len(sel_emp) <= 4 else f"{len(sel_emp)} Employes"
+
+    pdf.set_font("Arial", "", 10)
+    pdf.set_text_color(80, 80, 80)
+    pdf.cell(0, 6, txt_pdf(f"Semaine du {d_deb_str} au {d_fin_str}  |  Equipe : {emp_str}"), ln=True, align="C")
+    pdf.ln(4)
+
+    nb_cols = len(dates)
+    largeur_totale = 277
+    col_w = largeur_totale / nb_cols
+
+    pdf.set_font("Arial", "B", 10)
+    pdf.set_fill_color(30, 136, 229)
+    pdf.set_text_color(255, 255, 255)
+    for d in dates:
+        titre_jour = f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m')}"
+        pdf.cell(col_w, 9, txt_pdf(titre_jour), border=1, align="C", fill=True)
+    pdf.ln()
+
+    taches_par_jour = []
+    max_taches = 0
+    for d in dates:
+        t_list = [t for t in _taches_du_jour(df_f, d) if not t["reportee"]]
+        taches_par_jour.append(t_list)
+        if len(t_list) > max_taches:
+            max_taches = len(t_list)
+
+    pdf.set_text_color(0, 0, 0)
+    if max_taches == 0:
+        pdf.set_font("Arial", "I", 11)
+        pdf.cell(largeur_totale, 15, "Aucune seance programmee pour cette semaine.", border=1, ln=True, align="C")
+    else:
+        for i in range(max_taches):
+            pdf.set_font("Arial", "B", 8)
+            pdf.set_fill_color(240, 244, 248)
+            for j in range(nb_cols):
+                if i < len(taches_par_jour[j]):
+                    r = taches_par_jour[j][i]["row"]
+                    txt_h = f"{r.get('Heure_Debut','')} - {r.get('Heure_Fin','')}"
+                    pdf.cell(col_w, 5, txt_pdf(txt_h), border="LTR", align="C", fill=True)
+                else:
+                    pdf.cell(col_w, 5, "", border="LTR", align="C")
+            pdf.ln()
+
+            pdf.set_font("Arial", "B", 9)
+            for j in range(nb_cols):
+                if i < len(taches_par_jour[j]):
+                    r = taches_par_jour[j][i]["row"]
+                    cli = txt_pdf(str(r.get("Client", "")))[:22]
+                    pdf.cell(col_w, 6, cli, border="LR", align="C")
+                else:
+                    pdf.cell(col_w, 6, "", border="LR", align="C")
+            pdf.ln()
+
+            pdf.set_font("Arial", "", 8)
+            pdf.set_text_color(60, 60, 60)
+            for j in range(nb_cols):
+                if i < len(taches_par_jour[j]):
+                    r = taches_par_jour[j][i]["row"]
+                    emp = txt_pdf(str(r.get("Employe", "")))[:22]
+                    pdf.cell(col_w, 5, f"Agent: {emp}", border="LBR", align="C")
+                else:
+                    pdf.cell(col_w, 5, "", border="LBR", align="C")
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln()
+
+    pdf.ln(6)
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(0, 5, f"Document genere le {datetime.date.today().strftime('%d/%m/%Y')} - ImmoClean FACILITY Kenitra", ln=True, align="R")
+
+    return pdf.output(dest="S").encode("latin-1", "replace")
+
+
 def afficher_planning_grille(df_plan):
     if df_plan is None or df_plan.empty:
         st.info("الجدول الزمني فارغ حالياً.")
@@ -401,7 +490,18 @@ def afficher_planning_grille(df_plan):
                 unsafe_allow_html=True,
             )
 
-# --- 🚨 دوال رادار تداخل الأوقات (Détecteur de Conflits) 🚨 ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    pdf_planning_bytes = generer_planning_pdf(df_f, dates, sel_emp)
+    nom_fichier_plan = f"Planning_ImmoClean_{dates[0].strftime('%d-%m-%Y')}.pdf"
+    st.download_button(
+        label="📥 تحميل استعمال الزمن الأسبوعي (Télécharger Planning PDF)",
+        data=pdf_planning_bytes,
+        file_name=nom_fichier_plan,
+        mime="application/pdf",
+        use_container_width=True,
+    )
+
+# --- 🚨 دوال رادار تداخل الأوقات ---
 def verifier_conflit_ajout(df_plan, emp, jour, h_deb, h_fin, d_deb, freq):
     if df_plan.empty:
         return False, ""
@@ -900,7 +1000,7 @@ elif menu == "Pointage & Paiements":
             st.info("لا توجد حصص مسجلة بعد.")
 
 # ==========================================
-# 5. Finances & Trésorerie (مع فلتر شكون خلص والعمليات)
+# 5. Finances & Trésorerie
 # ==========================================
 elif menu == "Finances & Trésorerie":
     st.header("💼 المالية والمحاسبة (Finances & Trésorerie)")
@@ -1003,7 +1103,7 @@ elif menu == "Finances & Trésorerie":
             st.rerun()
 
 # ==========================================
-# 6. Générer Reçu (يجلب آخر الحصص أوتوماتيكياً حسب العقد)
+# 6. Générer Reçu
 # ==========================================
 elif menu == "Générer Reçu":
     st.header("🧾 مولد التوصيلات (Reçu de Paiement avec Historique des Séances)")
@@ -1245,7 +1345,7 @@ elif menu == "Gestion d'Équipe":
             st.rerun()
 
 # ==========================================
-# 9. Planning (مدموج مع الشبكة الأسبوعية الجديدة لـ Claude)
+# 9. Planning (مدموج مع الشبكة الأسبوعية + PDF)
 # ==========================================
 elif menu == "Planning":
     st.header("📅 التخطيط والبرمجة الزمنية (Planning & Radar Anti-Conflits)")
@@ -1293,11 +1393,11 @@ elif menu == "Planning":
                     st.success("✅ تمت إضافة الحصة للبرنامج بدون أي تداخل!")
                     st.rerun()
 
-    # --- 1. عرض الشبكة الأسبوعية العصرية (Grille Hebdomadaire) ---
+    # --- 1. عرض الشبكة الأسبوعية العصرية + زر تحميل PDF ---
     st.subheader("🗓️ استعمال الزمن الأسبوعي (Grille Interactive)")
     afficher_planning_grille(df_plan)
     
-    # --- 2. جدول التعديل والحذف السريع (داخل Expander باش تبقى الواجهة نقية) ---
+    # --- 2. جدول التعديل والحذف السريع ---
     if not df_plan.empty:
         st.markdown("---")
         with st.expander("✏️ تعديل أو حذف حصص من جدول البرمجة الكامل", expanded=False):
