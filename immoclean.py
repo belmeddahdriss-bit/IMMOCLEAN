@@ -1245,7 +1245,7 @@ elif menu == "Générer Reçu":
         )
 
 # ==========================================
-# 7. Générer Devis (مطور مع السطح والباركينغ والعدد)
+# 7. Générer Devis (مطور مع السطح والباركينغ والعدد والثمن)
 # ==========================================
 elif menu == "Générer Devis":
     st.header("📄 مولد عروض الأثمان المطور (Générateur de Devis PDF)")
@@ -1260,7 +1260,7 @@ elif menu == "Générer Devis":
             "3 passages par semaine (12 séances / mois)",
             "Quotidien 6j/7 (26 séances / mois)"
         ])
-        prix_visites = st.number_input("💰 ثمن الزيارات الأساسية (الدرج والمهد) (MAD)", min_value=0, value=600, step=50)
+        prix_visites = st.number_input("💰 ثمن الزيارات الأساسية (الدرج والمداخل) (MAD)", min_value=0, value=600, step=50)
         
     with col2:
         st.markdown("### 🏢 خدمات إضافية (السطح والباركينغ)")
@@ -1269,21 +1269,23 @@ elif menu == "Générer Devis":
         prix_terrasse = 0
         if inclure_terrasse:
             nb_terrasses = st.number_input("عدد السطوح", min_value=1, max_value=5, value=1, step=1)
-            prix_terrasse = st.number_input("ثمن تنظيف السطح (MAD)", min_value=0, value=100, step=25)
+            prix_terrasse = st.number_input("ثمن تنظيف السطح الواحد (MAD)", min_value=0, value=100, step=25)
             
         inclure_parking = st.checkbox("➕ إضافة تنظيف الباركينغ (Parking)", value=True)
         nb_parkings = 1
         prix_parking = 0
         if inclure_parking:
             nb_parkings = st.number_input("عدد الباركينغات / المرآب", min_value=1, max_value=5, value=1, step=1)
-            prix_parking = st.number_input("ثمن تنظيف الباركينغ (MAD)", min_value=0, value=100, step=25)
+            prix_parking = st.number_input("ثمن تنظيف الباركينغ الواحد (MAD)", min_value=0, value=100, step=25)
 
     st.markdown("---")
     col_d1, col_d2 = st.columns(2)
     with col_d1:
         produits_devis = st.selectbox("🧴 مواد ومعدات النظافة", ["Inclus (Fournis par ImmoClean FACILITY)", "A la charge de la Résidence"])
     with col_d2:
-        prix_total_devis = prix_visites + (prix_terrasse if inclure_terrasse else 0) + (prix_parking if inclure_parking else 0)
+        total_terrasse_calc = (nb_terrasses * prix_terrasse) if inclure_terrasse else 0
+        total_parking_calc = (nb_parkings * prix_parking) if inclure_parking else 0
+        prix_total_devis = prix_visites + total_terrasse_calc + total_parking_calc
         st.metric(label="💎 المجموع الإجمالي المقترح للشهر", value=f"{prix_total_devis:,.0f} MAD")
 
     details_devis = st.text_area("🧹 تفاصيل الخدمات الإضافية المشمولة", "Nettoyage complet des cages d'escaliers, hall d'entree, vitres et ascenseur.")
@@ -1319,11 +1321,13 @@ elif menu == "Générer Devis":
         pdf.set_font("Arial", "B", 11)
         pdf.cell(0, 8, "2. Prestations incluses et options :", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.cell(0, 7, txt_pdf(f"   - Nettoyage parties communes (Cages d'escaliers, hall) : {p_visites} MAD"), ln=True)
+        pdf.cell(0, 7, txt_pdf(f"   - Nettoyage parties communes (Escaliers, hall) : {p_visites} MAD"), ln=True)
         if inc_ter:
-            pdf.cell(0, 7, txt_pdf(f"   - Nettoyage Terrasse(s) (Quantite: {nb_ter}) : {p_ter} MAD"), ln=True)
+            tot_ter_pdf = nb_ter * p_ter
+            pdf.cell(0, 7, txt_pdf(f"   - Nettoyage Terrasse(s) (Quantite: {nb_ter} x {p_ter} MAD) : {tot_ter_pdf} MAD"), ln=True)
         if inc_par:
-            pdf.cell(0, 7, txt_pdf(f"   - Nettoyage Parking(s) / Garage(s) (Quantite: {nb_par}) : {p_par} MAD"), ln=True)
+            tot_par_pdf = nb_par * p_par
+            pdf.cell(0, 7, txt_pdf(f"   - Nettoyage Parking(s) (Quantite: {nb_par} x {p_par} MAD) : {tot_par_pdf} MAD"), ln=True)
         
         if det_n:
             pdf.multi_cell(0, 7, txt_pdf(f"   - Autres details : {det_n}"))
