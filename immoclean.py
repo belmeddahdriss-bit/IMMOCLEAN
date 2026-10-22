@@ -1245,27 +1245,50 @@ elif menu == "Générer Reçu":
         )
 
 # ==========================================
-# 7. Générer Devis
+# 7. Générer Devis (مطور مع السطح والباركينغ والعدد)
 # ==========================================
 elif menu == "Générer Devis":
-    st.header("📄 مولد عروض الأثمان (Générateur de Devis PDF)")
+    st.header("📄 مولد عروض الأثمان المطور (Générateur de Devis PDF)")
     
     col1, col2 = st.columns(2)
     with col1:
         nom_client_devis = st.text_input("🏢 اسم الإقامة أو الشركة", "Résidence Al Amal")
         ville_devis = st.text_input("📍 المدينة / الحي", "Kénitra")
-        freq_devis = st.selectbox("🔄 عدد الزيارات", [
+        freq_devis = st.selectbox("🔄 عدد زيارات التنظيف الأساسي", [
             "1 passage par semaine (4 séances / mois)",
             "2 passages par semaine (8 séances / mois)",
             "3 passages par semaine (12 séances / mois)",
             "Quotidien 6j/7 (26 séances / mois)"
         ])
+        prix_visites = st.number_input("💰 ثمن الزيارات الأساسية (الدرج والمهد) (MAD)", min_value=0, value=600, step=50)
+        
     with col2:
-        prix_devis = st.number_input("💰 السعر الشهري المقترح (MAD HT/TTC)", value=800, step=50)
-        produits_devis = st.selectbox("🧴 مواد ومعدات النظافة", ["Inclus (Fournis par ImmoClean FACILITY)", "A la charge de la Résidence"])
-        details_devis = st.text_area("🧹 تفاصيل الخدمات المشمولة", "Nettoyage complet des cages d'escaliers, hall d'entree, vitres, ascenseur, terrasse et parking.")
+        st.markdown("### 🏢 خدمات إضافية (السطح والباركينغ)")
+        inclure_terrasse = st.checkbox("➕ إضافة تنظيف السطح (Terrasse)", value=True)
+        nb_terrasses = 1
+        prix_terrasse = 0
+        if inclure_terrasse:
+            nb_terrasses = st.number_input("عدد السطوح", min_value=1, max_value=5, value=1, step=1)
+            prix_terrasse = st.number_input("ثمن تنظيف السطح (MAD)", min_value=0, value=100, step=25)
+            
+        inclure_parking = st.checkbox("➕ إضافة تنظيف الباركينغ (Parking)", value=True)
+        nb_parkings = 1
+        prix_parking = 0
+        if inclure_parking:
+            nb_parkings = st.number_input("عدد الباركينغات / المرآب", min_value=1, max_value=5, value=1, step=1)
+            prix_parking = st.number_input("ثمن تنظيف الباركينغ (MAD)", min_value=0, value=100, step=25)
 
-    def creer_devis_pdf(client_n, ville_n, freq_n, prod_n, det_n, prix_n):
+    st.markdown("---")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        produits_devis = st.selectbox("🧴 مواد ومعدات النظافة", ["Inclus (Fournis par ImmoClean FACILITY)", "A la charge de la Résidence"])
+    with col_d2:
+        prix_total_devis = prix_visites + (prix_terrasse if inclure_terrasse else 0) + (prix_parking if inclure_parking else 0)
+        st.metric(label="💎 المجموع الإجمالي المقترح للشهر", value=f"{prix_total_devis:,.0f} MAD")
+
+    details_devis = st.text_area("🧹 تفاصيل الخدمات الإضافية المشمولة", "Nettoyage complet des cages d'escaliers, hall d'entree, vitres et ascenseur.")
+
+    def creer_devis_pdf(client_n, ville_n, freq_n, prod_n, det_n, p_visites, inc_ter, nb_ter, p_ter, inc_par, nb_par, p_par, p_tot):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", "B", 16)
@@ -1289,14 +1312,21 @@ elif menu == "Générer Devis":
         pdf.ln(4)
         
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 8, "1. Frequence d'intervention :", ln=True)
+        pdf.cell(0, 8, "1. Frequence d'intervention de base :", ln=True)
         pdf.set_font("Arial", "", 11)
         pdf.cell(0, 8, txt_pdf(f"   - {freq_n}"), ln=True)
         
         pdf.set_font("Arial", "B", 11)
-        pdf.cell(0, 8, "2. Prestations incluses :", ln=True)
+        pdf.cell(0, 8, "2. Prestations incluses et options :", ln=True)
         pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 7, txt_pdf(f"   {det_n}"))
+        pdf.cell(0, 7, txt_pdf(f"   - Nettoyage parties communes (Cages d'escaliers, hall) : {p_visites} MAD"), ln=True)
+        if inc_ter:
+            pdf.cell(0, 7, txt_pdf(f"   - Nettoyage Terrasse(s) (Quantite: {nb_ter}) : {p_ter} MAD"), ln=True)
+        if inc_par:
+            pdf.cell(0, 7, txt_pdf(f"   - Nettoyage Parking(s) / Garage(s) (Quantite: {nb_par}) : {p_par} MAD"), ln=True)
+        
+        if det_n:
+            pdf.multi_cell(0, 7, txt_pdf(f"   - Autres details : {det_n}"))
         
         pdf.set_font("Arial", "B", 11)
         pdf.cell(0, 8, "3. Produits et Materiel :", ln=True)
@@ -1306,15 +1336,19 @@ elif menu == "Générer Devis":
         
         pdf.set_font("Arial", "B", 13)
         pdf.set_fill_color(230, 238, 250)
-        pdf.cell(0, 12, txt_pdf(f"TARIF MENSUEL FORFAITAIRE : {prix_n} MAD / Mois"), border=1, ln=True, align="C", fill=True)
+        pdf.cell(0, 12, txt_pdf(f"TARIF MENSUEL FORFAITAIRE TOTAL : {p_tot} MAD / Mois"), border=1, ln=True, align="C", fill=True)
         pdf.ln(12)
         
         pdf.set_font("Arial", "I", 10)
         pdf.cell(0, 8, "Ce devis est valable pour une duree de 30 jours. Direction ImmoClean FACILITY.", ln=True, align="R")
         return pdf.output(dest='S').encode('latin-1', 'replace')
 
-    devis_bytes = creer_devis_pdf(nom_client_devis, ville_devis, freq_devis, produits_devis, details_devis, prix_devis)
-    st.download_button("📥 تحميل عرض الثمن (Télécharger Devis PDF)", data=devis_bytes, file_name=f"Devis_{nom_client_devis}.pdf".replace(" ", "_"), mime="application/pdf", use_container_width=True)
+    devis_bytes = creer_devis_pdf(
+        nom_client_devis, ville_devis, freq_devis, produits_devis, details_devis,
+        prix_visites, inclure_terrasse, nb_terrasses, prix_terrasse,
+        inclure_parking, nb_parkings, prix_parking, prix_total_devis
+    )
+    st.download_button("📥 تحميل عرض الثمن المطور (Télécharger Devis PDF)", data=devis_bytes, file_name=f"Devis_{nom_client_devis}.pdf".replace(" ", "_"), mime="application/pdf", use_container_width=True)
 
 # ==========================================
 # 8. Gestion d'Équipe
