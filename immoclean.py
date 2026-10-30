@@ -654,15 +654,26 @@ if menu == "Tableau de bord":
                 residences_a_facturer += 1
                 clients_en_retard.append(client)
 
-    total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
-    total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').sum() if not df_fin.empty else 0
+    total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').fillna(0).sum() if not df_fin.empty else 0
+    total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').fillna(0).sum() if not df_fin.empty else 0
+    
+    # حساب المصاريف المخلصة من صندوق الشركة (Caisse) لنقصها من المداخيل المستلمة
+    depenses_caisse = 0
+    if not df_fin.empty and "Paye_Par" in df_fin.columns:
+        df_dep_caisse = df_fin[
+            (df_fin["Type"] == "Sortie (Dépense)") & 
+            (df_fin["Paye_Par"].astype(str).str.contains("Caisse|صندوق|شركة", case=False, na=False))
+        ]
+        depenses_caisse = pd.to_numeric(df_dep_caisse["Montant (MAD)"], errors='coerce').fillna(0).sum()
+
+    revenus_nets_caisse = total_revenus - depenses_caisse
     solde_net = total_revenus - total_depenses
     
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric(label="🏢 إجمالي الإقامات", value=f"{total_clients}")
     with col2: st.metric(label="📜 قيمة العقود الشهرية", value=f"{total_contrats_mad:,.0f} MAD")
     with col3: st.metric(label="🚨 واجب استخلاصها", value=f"{residences_a_facturer}")
-    with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{total_revenus:,.0f} MAD")
+    with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{revenus_nets_caisse:,.0f} MAD")
     with col5: st.metric(label="💎 الصافي (Solde Net)", value=f"{solde_net:,.0f} MAD")
     
     if clients_en_retard:
