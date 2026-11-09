@@ -46,6 +46,16 @@ def nettoyer_texte_gsheet(val):
         s = "0" + s
     return s
 
+# --- دالة مساعدة لتحويل أي نص أو رقم إلى float بأمان ---
+def to_float_safe(val):
+    try:
+        if pd.isna(val):
+            return 0.0
+        s = str(val).replace("MAD", "").replace(",", "").replace(" ", "").strip()
+        return float(s) if s != "" else 0.0
+    except Exception:
+        return 0.0
+
 # --- دوال جلب وحفظ البيانات ---
 def load_data(sheet_name, columns):
     try:
@@ -54,6 +64,16 @@ def load_data(sheet_name, columns):
         if not records:
             return pd.DataFrame(columns=columns)
         df = pd.DataFrame(records)
+        
+        # إذا كانت ورقة Clients: دمج السعر القديم والجديد وحساب TVA و HT دائماً وأوتوماتيكياً
+        if sheet_name == "Clients" and not df.empty:
+            if "Prix TTC (MAD)" not in df.columns and "Prix (MAD)" in df.columns:
+                df["Prix TTC (MAD)"] = df["Prix (MAD)"]
+            elif "Prix TTC (MAD)" in df.columns and "Prix (MAD)" in df.columns:
+                p_ttc_s = df["Prix TTC (MAD)"].apply(to_float_safe)
+                p_old_s = df["Prix (MAD)"].apply(to_float_safe)
+                df["Prix TTC (MAD)"] = [t if t > 0 else o for t, o in zip(p_ttc_s, p_old_s)]
+
         for col in columns:
             if col not in df.columns:
                 df[col] = ""
@@ -61,6 +81,14 @@ def load_data(sheet_name, columns):
         df = df[df[first_col].astype(str).str.strip().replace("nan", "") != ""].reset_index(drop=True)
         if "Téléphone" in df.columns:
             df["Téléphone"] = df["Téléphone"].apply(nettoyer_texte_gsheet)
+            
+        # حساب إجباري وأوتوماتيكي لـ TVA (20%) و Montant Net (HT) لكل إقامة
+        if sheet_name == "Clients" and not df.empty:
+            df["Prix TTC (MAD)"] = df["Prix TTC (MAD)"].apply(to_float_safe)
+            df["Montant Net (HT)"] = (df["Prix TTC (MAD)"] / 1.20).round(2)
+            df["TVA (20%)"] = (df["Prix TTC (MAD)"] - df["Montant Net (HT)"]).round(2)
+            df = df[columns]
+            
         return df
     except Exception as e:
         st.warning(f"⚠️ تعذر تحميل ورقة '{sheet_name}' مؤقتاً: {e}")
@@ -72,6 +100,11 @@ def save_data(sheet_name, df):
         df_clean = df.copy()
         if "Téléphone" in df_clean.columns:
             df_clean["Téléphone"] = df_clean["Téléphone"].apply(nettoyer_texte_gsheet)
+        if sheet_name == "Clients" and not df_clean.empty:
+            if "Prix TTC (MAD)" in df_clean.columns:
+                df_clean["Prix TTC (MAD)"] = df_clean["Prix TTC (MAD)"].apply(to_float_safe)
+                df_clean["Montant Net (HT)"] = (df_clean["Prix TTC (MAD)"] / 1.20).round(2)
+                df_clean["TVA (20%)"] = (df_clean["Prix TTC (MAD)"] - df_clean["Montant Net (HT)"]).round(2)
         ws.clear()
         set_with_dataframe(ws, df_clean, string_escaping="full")
     except Exception as e:
@@ -659,12 +692,10 @@ if menu == "Tableau de bord":
             secteurs_dict[str(r_c["Résidence"])] = str(r_c.get("Secteur", "")).strip()
     
     total_clients = len(df_clients) if not df_clients.empty else 0
-    total_employes = len(df_emp) if not df_emp.empty else 0
     
-    total_contrats_mad = 0
-    col_prix_nom = "Prix TTC (MAD)" if "Prix TTC (MAD)" in df_clients.columns else ("Prix (MAD)" if "Prix (MAD)" in df_clients.columns else "")
-    if not df_clients.empty and col_prix_nom:
-        total_contrats_mad = pd.to_numeric(df_clients[col_prix_nom], errors='coerce').fillna(0).sum()
+    total_contrats_ttc = df_clients["Prix TTC (MAD)"].sum() if not df_clients.empty else 0.0
+    total_contrats_tva = df_clients["TVA (20%)"].sum() if not df_clients.empty else 0.0
+    total_contrats_ht = df_clients["Montant Net (HT)"].sum() if not df_clients.empty else 0.0
     
     residences_a_facturer = 0
     clients_en_retard = []
@@ -695,10 +726,14 @@ if menu == "Tableau de bord":
     
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric(label="🏢 إجمالي الإقامات", value=f"{total_clients}")
-    with col2: st.metric(label="📜 قيمة العقود (TTC)", value=f"{total_contrats_mad:,.0f} MAD")
-    with col3: st.metric(label="🚨 واجب استخلاصها", value=f"{residences_a_facturer}")
-    with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{revenus_nets_caisse:,.0f} MAD")
-    with col5: st.metric(label="💎 الصافي (Solde Net)", value=f"{solde_net:,.0f} MAD")
+    with col2: st.metric(label="📜 إجمالي العقود (TTC)", value=f"{total_contrats_ttc:,.0f} MAD")
+    with col3: st.metric(label="🏛️ ضريبة العقود (TVA 20%)", value=f"{total_contrats_tva:,.2f} MAD")
+    with col4: st.metric(label="💵 صافي العقود للشركة (HT)", value=f"{total_contrats_ht:,.2f} MAD")
+    with col5: st.metric(label="🚨 واجب استخلاصها", value=f"{residences_a_facturer}")
+    
+    col_c1, col_c2 = st.columns(2)
+    with col_c1: st.metric(label="💰 المداخيل المستلمة فعلياً (بعد مصاريف الصندوق)", value=f"{revenus_nets_caisse:,.0f} MAD")
+    with col_c2: st.metric(label="💎 الصافي العام (Solde Net)", value=f"{solde_net:,.0f} MAD")
     
     if clients_en_retard:
         st.markdown(f"""
@@ -713,18 +748,10 @@ if menu == "Tableau de bord":
     with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (مع حساب TVA والـ HT أوتوماتيكياً)", expanded=True):
         if not df_clients.empty:
             df_cl_display = df_clients.copy()
-            p_col = "Prix TTC (MAD)" if "Prix TTC (MAD)" in df_cl_display.columns else "Prix (MAD)"
-            if p_col in df_cl_display.columns:
-                df_cl_display[p_col] = pd.to_numeric(df_cl_display[p_col], errors='coerce').fillna(0)
-                
-            if "TVA (20%)" not in df_cl_display.columns:
-                df_cl_display["TVA (20%)"] = df_cl_display[p_col] - (df_cl_display[p_col] / 1.20)
-            if "Montant Net (HT)" not in df_cl_display.columns:
-                df_cl_display["Montant Net (HT)"] = df_cl_display[p_col] / 1.20
-                
-            tot_ttc = df_cl_display[p_col].sum()
-            tot_tva = pd.to_numeric(df_cl_display["TVA (20%)"], errors='coerce').fillna(0).sum()
-            tot_ht = pd.to_numeric(df_cl_display["Montant Net (HT)"], errors='coerce').fillna(0).sum()
+            
+            tot_ttc = df_cl_display["Prix TTC (MAD)"].sum()
+            tot_tva = df_cl_display["TVA (20%)"].sum()
+            tot_ht = df_cl_display["Montant Net (HT)"].sum()
             
             total_row = pd.DataFrame({
                 "Résidence": ["💰 المجموع الإجمالي للعقود (TOTAL)"],
@@ -733,7 +760,7 @@ if menu == "Tableau de bord":
                 "Téléphone": ["—"],
                 "Services": ["—"],
                 "Produits": ["—"],
-                p_col: [tot_ttc],
+                "Prix TTC (MAD)": [tot_ttc],
                 "TVA (20%)": [tot_tva],
                 "Montant Net (HT)": [tot_ht],
                 "Jour de paiement": ["شهرياً"]
@@ -750,13 +777,13 @@ if menu == "Tableau de bord":
                 return [''] * len(row)
 
             styled_df = df_cl_avec_total.style.apply(colorer_lignes_clients, axis=1).format({
-                p_col: lambda v: f"{float(v):,.0f} MAD" if pd.notna(v) and str(v).replace('.','',1).isdigit() else "0 MAD",
-                "TVA (20%)": lambda v: f"{float(v):,.2f} MAD" if pd.notna(v) and str(v).replace('.','',1).isdigit() else "0.00 MAD",
-                "Montant Net (HT)": lambda v: f"{float(v):,.2f} MAD" if pd.notna(v) and str(v).replace('.','',1).isdigit() else "0.00 MAD"
-            }, na_rep="0 MAD")
+                "Prix TTC (MAD)": lambda v: f"{to_float_safe(v):,.0f} MAD",
+                "TVA (20%)": lambda v: f"{to_float_safe(v):,.2f} MAD",
+                "Montant Net (HT)": lambda v: f"{to_float_safe(v):,.2f} MAD"
+            })
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            st.success(f"💵 **مجموع المداخيل الصافية (HT):** `{tot_ht:,.2f} MAD` | 🏛️ **مجموع TVA للدولة:** `{tot_tva:,.2f} MAD`")
+            st.success(f"📜 **إجمالي العقود (TTC):** `{tot_ttc:,.2f} MAD`  |  🏛️ **قيمة الـ TVA للدولة (20%):** `{tot_tva:,.2f} MAD`  |  💵 **الباقي الصافي للشركة (HT):** `{tot_ht:,.2f} MAD`")
         else:
             st.info("لا توجد إقامات مسجلة حالياً.")
 
@@ -939,8 +966,8 @@ elif menu == "Nouveau Client":
             if not nom_res.strip():
                 st.error("⚠️ يرجى إدخال اسم الإقامة!")
             else:
-                tva_montant = prix_ttc - (prix_ttc / 1.20)
-                montant_ht = prix_ttc / 1.20
+                montant_ht = round(prix_ttc / 1.20, 2)
+                tva_montant = round(prix_ttc - montant_ht, 2)
                 services_complet = f"{freq_passage} - {' + '.join(zones_clean)}"
                 
                 new_row = pd.DataFrame([{
@@ -951,13 +978,13 @@ elif menu == "Nouveau Client":
                     "Services": services_complet,
                     "Produits": produits,
                     "Prix TTC (MAD)": prix_ttc,
-                    "TVA (20%)": round(tva_montant, 2),
-                    "Montant Net (HT)": round(montant_ht, 2),
+                    "TVA (20%)": tva_montant,
+                    "Montant Net (HT)": montant_ht,
                     "Jour de paiement": jour_paie
                 }])
                 df_clients = pd.concat([df_clients, new_row], ignore_index=True)
                 save_data("Clients", df_clients)
-                st.success(f"✅ تم تسجيل إقامة **{nom_res}** بنجاح (مع حساب TVA و HT أوتوماتيكياً)!")
+                st.success(f"✅ تم تسجيل إقامة **{nom_res}** بنجاح (TVA: {tva_montant} MAD | Net HT: {montant_ht} MAD)!")
 
 # ==========================================
 # 3. Gérer les clients
@@ -969,18 +996,21 @@ elif menu == "Gérer les clients":
     if df_clients.empty:
         st.info("لا توجد إقامات مسجلة حالياً.")
     else:
-        st.info("💡 يمكنك التعديل مباشرة في الجدول أسفله، ثم الضغط على زر الحفظ.")
-        edited_df = st.data_editor(df_clients, num_rows="dynamic", use_container_width=True)
+        st.info("💡 عدّل السعر في خانة Prix TTC (MAD) واضغط على حفظ، وسيقوم النظام بحساب TVA و Montant Net (HT) أوتوماتيكياً.")
+        edited_df = st.data_editor(
+            df_clients,
+            num_rows="dynamic",
+            use_container_width=True,
+            disabled=["TVA (20%)", "Montant Net (HT)"]
+        )
         
-        if st.button("💾 حفظ التعديلات (Enregistrer)", type="primary"):
+        if st.button("💾 حفظ التعديلات وتحديث الضرائب (Enregistrer)", type="primary"):
             edited_df = edited_df[edited_df["Résidence"].astype(str).str.strip().replace("nan", "") != ""].reset_index(drop=True)
-            p_c = "Prix TTC (MAD)" if "Prix TTC (MAD)" in edited_df.columns else "Prix (MAD)"
-            if p_c in edited_df.columns:
-                edited_df[p_c] = pd.to_numeric(edited_df[p_c], errors='coerce').fillna(0)
-                edited_df["TVA (20%)"] = edited_df[p_c] - (edited_df[p_c] / 1.20)
-                edited_df["Montant Net (HT)"] = edited_df[p_c] / 1.20
+            edited_df["Prix TTC (MAD)"] = edited_df["Prix TTC (MAD)"].apply(to_float_safe)
+            edited_df["Montant Net (HT)"] = (edited_df["Prix TTC (MAD)"] / 1.20).round(2)
+            edited_df["TVA (20%)"] = (edited_df["Prix TTC (MAD)"] - edited_df["Montant Net (HT)"]).round(2)
             save_data("Clients", edited_df)
-            st.success("✅ تم تحديث قاعدة بيانات الزبناء وحساب الضرائب بنجاح!")
+            st.success("✅ تم تحديث قاعدة بيانات الزبناء وحساب TVA و HT بنجاح!")
             st.rerun()
 
 # ==========================================
@@ -1026,15 +1056,13 @@ elif menu == "Pointage & Paiements":
             res_pay = st.selectbox("🏢 اختر الإقامة لتأكيد خلاصها", df_clients["Résidence"].tolist())
             info_c = df_clients[df_clients["Résidence"] == res_pay].iloc[0]
             cible_c = calculer_cible_passages(info_c.get("Services", ""))
-            
-            p_col_pay = "Prix TTC (MAD)" if "Prix TTC (MAD)" in info_c else "Prix (MAD)"
-            prix_c = pd.to_numeric(info_c.get(p_col_pay, 0), errors='coerce')
+            prix_c = to_float_safe(info_c.get("Prix TTC (MAD)", 500))
             
             en_attente_df = df_hist[(df_hist["Résidence"] == res_pay) & (df_hist["Statut"] == "En attente")]
             nb_att = len(en_attente_df)
             
             st.info(f"📊 عدد الحصص غير المؤداة حالياً لـ **{res_pay}** هو: **`{nb_att}`** من أصل **`{cible_c}`** حصص فالشهر.")
-            montant_encaisse = st.number_input("💵 المبلغ المستلم (MAD)", value=int(prix_c) if pd.notna(prix_c) else 500, step=50)
+            montant_encaisse = st.number_input("💵 المبلغ المستلم (MAD)", value=int(prix_c) if prix_c > 0 else 500, step=50)
             encaisse_par = st.selectbox("👤 شكون تسلم الفلوس / فين دخلات", ["Caisse (صندوق الشركة)", "Driss", "Younnes"])
             
             if st.button("💰 تأكيد استلام المبلغ وتصفية الحصص", type="primary"):
@@ -1193,11 +1221,8 @@ elif menu == "Générer Reçu":
             if not client_info.empty:
                 services_client = str(client_info.iloc[0].get("Services", ""))
                 cible_auto = calculer_cible_passages(services_client)
-                p_col_rec = "Prix TTC (MAD)" if "Prix TTC (MAD)" in client_info.columns else "Prix (MAD)"
-                try:
-                    prix_defaut = int(float(client_info.iloc[0].get(p_col_rec, 500)))
-                except:
-                    prix_defaut = 500
+                p_val = to_float_safe(client_info.iloc[0].get("Prix TTC (MAD)", 500))
+                prix_defaut = int(p_val) if p_val > 0 else 500
             
             mois_actuel = datetime.date.today().strftime("%B %Y")
             periode = st.text_input("📅 الشهر / الفترة (Période)", value=mois_actuel)
