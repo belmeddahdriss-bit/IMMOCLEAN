@@ -118,7 +118,7 @@ def txt_pdf(texte):
         t = t.replace(ar, fr)
     return t.encode('latin-1', 'replace').decode('latin-1')
 
-# --- أسماء الأعمدة في كل ورقة (محدثة بخانات الـ TVA والـ HT) ---
+# --- أسماء الأعمدة في كل ورقة ---
 COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix TTC (MAD)", "TVA (20%)", "Montant Net (HT)", "Jour de paiement"]
 COLS_HIST = ["Date", "Résidence", "Employé", "Tâches", "Statut"]
 COLS_EMP = ["Nom", "Téléphone", "Poste", "Photo"]
@@ -749,7 +749,12 @@ if menu == "Tableau de bord":
                     return ['background-color: #e8f5e9; color: #1b5e20; font-weight: bold;'] * len(row)
                 return [''] * len(row)
 
-            styled_df = df_cl_avec_total.style.apply(colorer_lignes_clients, axis=1).format({p_col: "{:,.0f} MAD", "TVA (20%)": "{:,.2f} MAD", "Montant Net (HT)": "{:,.2f} MAD"})
+            styled_df = df_cl_avec_total.style.apply(colorer_lignes_clients, axis=1).format({
+                p_col: lambda v: f"{float(v):,.0f} MAD" if pd.notna(v) and str(v).replace('.','',1).isdigit() else "0 MAD",
+                "TVA (20%)": lambda v: f"{float(v):,.2f} MAD" if pd.notna(v) and str(v).replace('.','',1).isdigit() else "0.00 MAD",
+                "Montant Net (HT)": lambda v: f"{float(v):,.2f} MAD" if pd.notna(v) and str(v).replace('.','',1).isdigit() else "0.00 MAD"
+            }, na_rep="0 MAD")
+            
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             st.success(f"💵 **مجموع المداخيل الصافية (HT):** `{tot_ht:,.2f} MAD` | 🏛️ **مجموع TVA للدولة:** `{tot_tva:,.2f} MAD`")
         else:
@@ -969,7 +974,6 @@ elif menu == "Gérer les clients":
         
         if st.button("💾 حفظ التعديلات (Enregistrer)", type="primary"):
             edited_df = edited_df[edited_df["Résidence"].astype(str).str.strip().replace("nan", "") != ""].reset_index(drop=True)
-            # إعادة حساب TVA و HT أوتوماتيكياً في حال تم تغيير Prix TTC
             p_c = "Prix TTC (MAD)" if "Prix TTC (MAD)" in edited_df.columns else "Prix (MAD)"
             if p_c in edited_df.columns:
                 edited_df[p_c] = pd.to_numeric(edited_df[p_c], errors='coerce').fillna(0)
@@ -1307,7 +1311,7 @@ elif menu == "Générer Reçu":
         )
 
 # ==========================================
-# 7. Générer Devis (مطور مع السطح والباركينغ والعدد والثمن)
+# 7. Générer Devis
 # ==========================================
 elif menu == "Générer Devis":
     st.header("📄 مولد عروض الأثمان المطور (Générateur de Devis PDF)")
@@ -1445,7 +1449,7 @@ elif menu == "Gestion d'Équipe":
             st.rerun()
 
 # ==========================================
-# 9. Planning (مدموج مع الشبكة الأسبوعية + PDF)
+# 9. Planning
 # ==========================================
 elif menu == "Planning":
     st.header("📅 التخطيط والبرمجة الزمنية (Planning & Radar Anti-Conflits)")
@@ -1493,11 +1497,9 @@ elif menu == "Planning":
                     st.success("✅ تمت إضافة الحصة للبرنامج بدون أي تداخل!")
                     st.rerun()
 
-    # --- 1. عرض الشبكة الأسبوعية العصرية + زر تحميل PDF (مع تمرير df_clients) ---
     st.subheader("🗓️ استعمال الزمن الأسبوعي (Grille Interactive)")
     afficher_planning_grille(df_plan, df_clients)
     
-    # --- 2. جدول التعديل والحذف السريع ---
     if not df_plan.empty:
         st.markdown("---")
         with st.expander("✏️ تعديل أو حذف حصص من جدول البرمجة الكامل", expanded=False):
