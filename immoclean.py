@@ -118,8 +118,8 @@ def txt_pdf(texte):
         t = t.replace(ar, fr)
     return t.encode('latin-1', 'replace').decode('latin-1')
 
-# --- أسماء الأعمدة في كل ورقة ---
-COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix (MAD)", "Jour de paiement"]
+# --- أسماء الأعمدة في كل ورقة (محدثة بخانات الـ TVA والـ HT) ---
+COLS_CLIENTS = ["Résidence", "Secteur", "Responsable", "Téléphone", "Services", "Produits", "Prix TTC (MAD)", "TVA (20%)", "Montant Net (HT)", "Jour de paiement"]
 COLS_HIST = ["Date", "Résidence", "Employé", "Tâches", "Statut"]
 COLS_EMP = ["Nom", "Téléphone", "Poste", "Photo"]
 COLS_FIN = ["Date", "Type", "Categorie", "Montant (MAD)", "Description", "Paye_Par"]
@@ -294,7 +294,6 @@ def generer_planning_pdf(df_f, dates, sel_emp, df_clients):
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
 
-    # بناء قاموس لربط كل إقامة بالمنطقة (Secteur) الخاصة بها
     secteur_map = {}
     if not df_clients.empty and "Résidence" in df_clients.columns and "Secteur" in df_clients.columns:
         for _, row in df_clients.iterrows():
@@ -342,7 +341,6 @@ def generer_planning_pdf(df_f, dates, sel_emp, df_clients):
         pdf.cell(largeur_totale, 15, "Aucune seance programmee pour cette semaine.", border=1, ln=True, align="C")
     else:
         for i in range(max_taches):
-            # 1. سطر التوقيت
             pdf.set_font("Arial", "B", 8)
             pdf.set_fill_color(240, 244, 248)
             for j in range(nb_cols):
@@ -354,7 +352,6 @@ def generer_planning_pdf(df_f, dates, sel_emp, df_clients):
                     pdf.cell(col_w, 4.5, "", border="LTR", align="C")
             pdf.ln()
 
-            # 2. سطر اسم الإقامة
             pdf.set_font("Arial", "B", 8.5)
             for j in range(nb_cols):
                 if i < len(taches_par_jour[j]):
@@ -365,7 +362,6 @@ def generer_planning_pdf(df_f, dates, sel_emp, df_clients):
                     pdf.cell(col_w, 5, "", border="LR", align="C")
             pdf.ln()
 
-            # 3. سطر الحي / الموقع (Secteur) تحت اسم الإقامة أوتوماتيكياً
             for j in range(nb_cols):
                 if i < len(taches_par_jour[j]):
                     r = taches_par_jour[j][i]["row"]
@@ -382,7 +378,6 @@ def generer_planning_pdf(df_f, dates, sel_emp, df_clients):
                     pdf.cell(col_w, 4, "", border="LR", align="C")
             pdf.ln()
 
-            # 4. سطر العاملة
             pdf.set_font("Arial", "", 7.5)
             pdf.set_text_color(60, 60, 60)
             for j in range(nb_cols):
@@ -520,7 +515,6 @@ def afficher_planning_grille(df_plan, df_clients):
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    # تمرير df_clients لدالة الـ PDF لجلب المناطق
     pdf_planning_bytes = generer_planning_pdf(df_f, dates, sel_emp, df_clients)
     nom_fichier_plan = f"Planning_ImmoClean_{dates[0].strftime('%d-%m-%Y')}.pdf"
     st.download_button(
@@ -668,8 +662,9 @@ if menu == "Tableau de bord":
     total_employes = len(df_emp) if not df_emp.empty else 0
     
     total_contrats_mad = 0
-    if not df_clients.empty and "Prix (MAD)" in df_clients.columns:
-        total_contrats_mad = pd.to_numeric(df_clients["Prix (MAD)"], errors='coerce').fillna(0).sum()
+    col_prix_nom = "Prix TTC (MAD)" if "Prix TTC (MAD)" in df_clients.columns else ("Prix (MAD)" if "Prix (MAD)" in df_clients.columns else "")
+    if not df_clients.empty and col_prix_nom:
+        total_contrats_mad = pd.to_numeric(df_clients[col_prix_nom], errors='coerce').fillna(0).sum()
     
     residences_a_facturer = 0
     clients_en_retard = []
@@ -700,7 +695,7 @@ if menu == "Tableau de bord":
     
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric(label="🏢 إجمالي الإقامات", value=f"{total_clients}")
-    with col2: st.metric(label="📜 قيمة العقود الشهرية", value=f"{total_contrats_mad:,.0f} MAD")
+    with col2: st.metric(label="📜 قيمة العقود (TTC)", value=f"{total_contrats_mad:,.0f} MAD")
     with col3: st.metric(label="🚨 واجب استخلاصها", value=f"{residences_a_facturer}")
     with col4: st.metric(label="💰 المداخيل المستلمة", value=f"{revenus_nets_caisse:,.0f} MAD")
     with col5: st.metric(label="💎 الصافي (Solde Net)", value=f"{solde_net:,.0f} MAD")
@@ -715,10 +710,21 @@ if menu == "Tableau de bord":
 
     st.markdown("---")
     
-    with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (الإقامات باللون الأحمر وصل وقت خلاصها 🚨)", expanded=True):
+    with st.expander("🏢 جدول جميع الإقامات المتعاقد معها (مع حساب TVA والـ HT أوتوماتيكياً)", expanded=True):
         if not df_clients.empty:
             df_cl_display = df_clients.copy()
-            df_cl_display["Prix (MAD)"] = pd.to_numeric(df_cl_display["Prix (MAD)"], errors='coerce').fillna(0)
+            p_col = "Prix TTC (MAD)" if "Prix TTC (MAD)" in df_cl_display.columns else "Prix (MAD)"
+            if p_col in df_cl_display.columns:
+                df_cl_display[p_col] = pd.to_numeric(df_cl_display[p_col], errors='coerce').fillna(0)
+                
+            if "TVA (20%)" not in df_cl_display.columns:
+                df_cl_display["TVA (20%)"] = df_cl_display[p_col] - (df_cl_display[p_col] / 1.20)
+            if "Montant Net (HT)" not in df_cl_display.columns:
+                df_cl_display["Montant Net (HT)"] = df_cl_display[p_col] / 1.20
+                
+            tot_ttc = df_cl_display[p_col].sum()
+            tot_tva = pd.to_numeric(df_cl_display["TVA (20%)"], errors='coerce').fillna(0).sum()
+            tot_ht = pd.to_numeric(df_cl_display["Montant Net (HT)"], errors='coerce').fillna(0).sum()
             
             total_row = pd.DataFrame({
                 "Résidence": ["💰 المجموع الإجمالي للعقود (TOTAL)"],
@@ -727,8 +733,10 @@ if menu == "Tableau de bord":
                 "Téléphone": ["—"],
                 "Services": ["—"],
                 "Produits": ["—"],
-                "Prix (MAD)": [total_contrats_mad],
-                "Jour de paiement": ["شهرياً (Par mois)"]
+                p_col: [tot_ttc],
+                "TVA (20%)": [tot_tva],
+                "Montant Net (HT)": [tot_ht],
+                "Jour de paiement": ["شهرياً"]
             })
             
             df_cl_avec_total = pd.concat([df_cl_display, total_row], ignore_index=True)
@@ -741,9 +749,9 @@ if menu == "Tableau de bord":
                     return ['background-color: #e8f5e9; color: #1b5e20; font-weight: bold;'] * len(row)
                 return [''] * len(row)
 
-            styled_df = df_cl_avec_total.style.apply(colorer_lignes_clients, axis=1).format({"Prix (MAD)": "{:,.0f} MAD"})
+            styled_df = df_cl_avec_total.style.apply(colorer_lignes_clients, axis=1).format({p_col: "{:,.0f} MAD", "TVA (20%)": "{:,.2f} MAD", "Montant Net (HT)": "{:,.2f} MAD"})
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            st.success(f"💵 **مجموع الأموال الشهرية الثابتة في العقود (MRR):** `{total_contrats_mad:,.2f} MAD / Mois`")
+            st.success(f"💵 **مجموع المداخيل الصافية (HT):** `{tot_ht:,.2f} MAD` | 🏛️ **مجموع TVA للدولة:** `{tot_tva:,.2f} MAD`")
         else:
             st.info("لا توجد إقامات مسجلة حالياً.")
 
@@ -918,7 +926,7 @@ elif menu == "Nouveau Client":
             ])
             zones_clean = st.multiselect("🧹 الأماكن المشمولة بالتنظيف", ["Escaliers", "Terrasse", "Sous-sol / Parking", "Bureau", "Jardin"], default=["Escaliers", "Terrasse"])
             produits = st.selectbox("🧴 مواد النظافة (Produits)", ["Inclus (ImmoClean)", "Fournis par le Syndic"])
-            prix = st.number_input("💰 السعر الشهري (Prix en MAD)", min_value=0, value=600, step=50)
+            prix_ttc = st.number_input("💰 السعر الإجمالي للعقد (Prix TTC en MAD)", min_value=0, value=600, step=50)
             jour_paie = st.text_input("📅 يوم الأداء (Jour de paiement)", value="Le 1er du mois")
             
         submitted = st.form_submit_button("💾 حفظ الإقامة الجديدة", use_container_width=True)
@@ -926,7 +934,10 @@ elif menu == "Nouveau Client":
             if not nom_res.strip():
                 st.error("⚠️ يرجى إدخال اسم الإقامة!")
             else:
+                tva_montant = prix_ttc - (prix_ttc / 1.20)
+                montant_ht = prix_ttc / 1.20
                 services_complet = f"{freq_passage} - {' + '.join(zones_clean)}"
+                
                 new_row = pd.DataFrame([{
                     "Résidence": nom_res.strip(),
                     "Secteur": secteur.strip(),
@@ -934,12 +945,14 @@ elif menu == "Nouveau Client":
                     "Téléphone": nettoyer_texte_gsheet(telephone),
                     "Services": services_complet,
                     "Produits": produits,
-                    "Prix (MAD)": prix,
+                    "Prix TTC (MAD)": prix_ttc,
+                    "TVA (20%)": round(tva_montant, 2),
+                    "Montant Net (HT)": round(montant_ht, 2),
                     "Jour de paiement": jour_paie
                 }])
                 df_clients = pd.concat([df_clients, new_row], ignore_index=True)
                 save_data("Clients", df_clients)
-                st.success(f"✅ تم تسجيل إقامة **{nom_res}** بنجاح!")
+                st.success(f"✅ تم تسجيل إقامة **{nom_res}** بنجاح (مع حساب TVA و HT أوتوماتيكياً)!")
 
 # ==========================================
 # 3. Gérer les clients
@@ -956,8 +969,14 @@ elif menu == "Gérer les clients":
         
         if st.button("💾 حفظ التعديلات (Enregistrer)", type="primary"):
             edited_df = edited_df[edited_df["Résidence"].astype(str).str.strip().replace("nan", "") != ""].reset_index(drop=True)
+            # إعادة حساب TVA و HT أوتوماتيكياً في حال تم تغيير Prix TTC
+            p_c = "Prix TTC (MAD)" if "Prix TTC (MAD)" in edited_df.columns else "Prix (MAD)"
+            if p_c in edited_df.columns:
+                edited_df[p_c] = pd.to_numeric(edited_df[p_c], errors='coerce').fillna(0)
+                edited_df["TVA (20%)"] = edited_df[p_c] - (edited_df[p_c] / 1.20)
+                edited_df["Montant Net (HT)"] = edited_df[p_c] / 1.20
             save_data("Clients", edited_df)
-            st.success("✅ تم تحديث قاعدة بيانات الزبناء بنجاح!")
+            st.success("✅ تم تحديث قاعدة بيانات الزبناء وحساب الضرائب بنجاح!")
             st.rerun()
 
 # ==========================================
@@ -1003,7 +1022,9 @@ elif menu == "Pointage & Paiements":
             res_pay = st.selectbox("🏢 اختر الإقامة لتأكيد خلاصها", df_clients["Résidence"].tolist())
             info_c = df_clients[df_clients["Résidence"] == res_pay].iloc[0]
             cible_c = calculer_cible_passages(info_c.get("Services", ""))
-            prix_c = pd.to_numeric(info_c.get("Prix (MAD)", 0), errors='coerce')
+            
+            p_col_pay = "Prix TTC (MAD)" if "Prix TTC (MAD)" in info_c else "Prix (MAD)"
+            prix_c = pd.to_numeric(info_c.get(p_col_pay, 0), errors='coerce')
             
             en_attente_df = df_hist[(df_hist["Résidence"] == res_pay) & (df_hist["Statut"] == "En attente")]
             nb_att = len(en_attente_df)
@@ -1168,8 +1189,9 @@ elif menu == "Générer Reçu":
             if not client_info.empty:
                 services_client = str(client_info.iloc[0].get("Services", ""))
                 cible_auto = calculer_cible_passages(services_client)
+                p_col_rec = "Prix TTC (MAD)" if "Prix TTC (MAD)" in client_info.columns else "Prix (MAD)"
                 try:
-                    prix_defaut = int(float(client_info.iloc[0].get("Prix (MAD)", 500)))
+                    prix_defaut = int(float(client_info.iloc[0].get(p_col_rec, 500)))
                 except:
                     prix_defaut = 500
             
