@@ -288,11 +288,20 @@ def _carte_html(t, couleur, doublon):
         f"{badge_html}</div>"
     )
 
-# --- 📄 دالة توليد ملف PDF لاستعمال الزمن الأسبوعي (Landscape A4) ---
-def generer_planning_pdf(df_f, dates, sel_emp):
+# --- 📄 دالة توليد ملف PDF لاستعمال الزمن الأسبوعي (Landscape A4) مع جلب Secteur أوتوماتيكياً ---
+def generer_planning_pdf(df_f, dates, sel_emp, df_clients):
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
+
+    # بناء قاموس لربط كل إقامة بالمنطقة (Secteur) الخاصة بها
+    secteur_map = {}
+    if not df_clients.empty and "Résidence" in df_clients.columns and "Secteur" in df_clients.columns:
+        for _, row in df_clients.iterrows():
+            res_key = str(row["Résidence"]).strip().lower()
+            sec_val = str(row.get("Secteur", "")).strip()
+            if res_key and sec_val and sec_val.lower() != "nan":
+                secteur_map[res_key] = sec_val
 
     pdf.set_font("Arial", "B", 16)
     pdf.set_text_color(11, 61, 145)
@@ -333,36 +342,56 @@ def generer_planning_pdf(df_f, dates, sel_emp):
         pdf.cell(largeur_totale, 15, "Aucune seance programmee pour cette semaine.", border=1, ln=True, align="C")
     else:
         for i in range(max_taches):
+            # 1. سطر التوقيت
             pdf.set_font("Arial", "B", 8)
             pdf.set_fill_color(240, 244, 248)
             for j in range(nb_cols):
                 if i < len(taches_par_jour[j]):
                     r = taches_par_jour[j][i]["row"]
                     txt_h = f"{r.get('Heure_Debut','')} - {r.get('Heure_Fin','')}"
-                    pdf.cell(col_w, 5, txt_pdf(txt_h), border="LTR", align="C", fill=True)
+                    pdf.cell(col_w, 4.5, txt_pdf(txt_h), border="LTR", align="C", fill=True)
                 else:
-                    pdf.cell(col_w, 5, "", border="LTR", align="C")
+                    pdf.cell(col_w, 4.5, "", border="LTR", align="C")
             pdf.ln()
 
-            pdf.set_font("Arial", "B", 9)
+            # 2. سطر اسم الإقامة
+            pdf.set_font("Arial", "B", 8.5)
             for j in range(nb_cols):
                 if i < len(taches_par_jour[j]):
                     r = taches_par_jour[j][i]["row"]
                     cli = txt_pdf(str(r.get("Client", "")))[:22]
-                    pdf.cell(col_w, 6, cli, border="LR", align="C")
+                    pdf.cell(col_w, 5, cli, border="LR", align="C")
                 else:
-                    pdf.cell(col_w, 6, "", border="LR", align="C")
+                    pdf.cell(col_w, 5, "", border="LR", align="C")
             pdf.ln()
 
-            pdf.set_font("Arial", "", 8)
+            # 3. سطر الحي / الموقع (Secteur) تحت اسم الإقامة أوتوماتيكياً
+            for j in range(nb_cols):
+                if i < len(taches_par_jour[j]):
+                    r = taches_par_jour[j][i]["row"]
+                    nom_cli_str = str(r.get("Client", "")).strip().lower()
+                    sec_res = secteur_map.get(nom_cli_str, "")
+                    if sec_res:
+                        pdf.set_font("Arial", "I", 7.5)
+                        pdf.set_text_color(100, 100, 100)
+                        pdf.cell(col_w, 4, txt_pdf(f"({sec_res})"), border="LR", align="C")
+                        pdf.set_text_color(0, 0, 0)
+                    else:
+                        pdf.cell(col_w, 4, "", border="LR", align="C")
+                else:
+                    pdf.cell(col_w, 4, "", border="LR", align="C")
+            pdf.ln()
+
+            # 4. سطر العاملة
+            pdf.set_font("Arial", "", 7.5)
             pdf.set_text_color(60, 60, 60)
             for j in range(nb_cols):
                 if i < len(taches_par_jour[j]):
                     r = taches_par_jour[j][i]["row"]
                     emp = txt_pdf(str(r.get("Employe", "")))[:22]
-                    pdf.cell(col_w, 5, f"Agent: {emp}", border="LBR", align="C")
+                    pdf.cell(col_w, 4.5, f"Agent: {emp}", border="LBR", align="C")
                 else:
-                    pdf.cell(col_w, 5, "", border="LBR", align="C")
+                    pdf.cell(col_w, 4.5, "", border="LBR", align="C")
             pdf.set_text_color(0, 0, 0)
             pdf.ln()
 
@@ -374,7 +403,7 @@ def generer_planning_pdf(df_f, dates, sel_emp):
     return pdf.output(dest="S").encode("latin-1", "replace")
 
 
-def afficher_planning_grille(df_plan):
+def afficher_planning_grille(df_plan, df_clients):
     if df_plan is None or df_plan.empty:
         st.info("الجدول الزمني فارغ حالياً.")
         return
@@ -491,7 +520,8 @@ def afficher_planning_grille(df_plan):
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    pdf_planning_bytes = generer_planning_pdf(df_f, dates, sel_emp)
+    # تمرير df_clients لدالة الـ PDF لجلب المناطق
+    pdf_planning_bytes = generer_planning_pdf(df_f, dates, sel_emp, df_clients)
     nom_fichier_plan = f"Planning_ImmoClean_{dates[0].strftime('%d-%m-%Y')}.pdf"
     st.download_button(
         label="📥 تحميل استعمال الزمن الأسبوعي (Télécharger Planning PDF)",
@@ -657,7 +687,6 @@ if menu == "Tableau de bord":
     total_revenus = pd.to_numeric(df_fin[df_fin["Type"] == "Entrée (Revenu)"]["Montant (MAD)"], errors='coerce').fillna(0).sum() if not df_fin.empty else 0
     total_depenses = pd.to_numeric(df_fin[df_fin["Type"] == "Sortie (Dépense)"]["Montant (MAD)"], errors='coerce').fillna(0).sum() if not df_fin.empty else 0
     
-    # حساب المصاريف المخلصة من صندوق الشركة (Caisse) لنقصها من المداخيل المستلمة
     depenses_caisse = 0
     if not df_fin.empty and "Paye_Par" in df_fin.columns:
         df_dep_caisse = df_fin[
@@ -1442,9 +1471,9 @@ elif menu == "Planning":
                     st.success("✅ تمت إضافة الحصة للبرنامج بدون أي تداخل!")
                     st.rerun()
 
-    # --- 1. عرض الشبكة الأسبوعية العصرية + زر تحميل PDF ---
+    # --- 1. عرض الشبكة الأسبوعية العصرية + زر تحميل PDF (مع تمرير df_clients) ---
     st.subheader("🗓️ استعمال الزمن الأسبوعي (Grille Interactive)")
-    afficher_planning_grille(df_plan)
+    afficher_planning_grille(df_plan, df_clients)
     
     # --- 2. جدول التعديل والحذف السريع ---
     if not df_plan.empty:
