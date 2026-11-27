@@ -124,6 +124,56 @@ def calculer_cible_passages(services_str):
     else:
         return 4
 
+# --- دالة التحقق من خلاص إقامة في شهر معين (YYYY-MM) ---
+MOIS_FR = {
+    1: "Janvier", 2: "Février", 3: "Mars", 4: "Avril",
+    5: "Mai", 6: "Juin", 7: "Juillet", 8: "Août",
+    9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Décembre"
+}
+MOIS_AR = {
+    1: "يناير", 2: "فبراير", 3: "مارس", 4: "أبريل",
+    5: "ماي", 6: "يونيو", 7: "يوليوز", 8: "غشت",
+    9: "شتنبر", 10: "أكتوبر", 11: "نونبر", 12: "دجنبر"
+}
+
+def verifier_paiement_client_mois(df_fin, res_nom, mois_key):
+    """
+    كيتحقق من ورقة Finances واش الإقامة خلصات فـ الشهر المطلوب (mois_key = 'YYYY-MM').
+    كيقبل الخلاص المسجل بـ [YYYY-MM] فـ الوصف أو المسجل بتاريخ فـ نفس الشهر.
+    """
+    if df_fin is None or df_fin.empty:
+        return False, 0.0, "", ""
+    res_clean = str(res_nom).strip().lower()
+    if not res_clean:
+        return False, 0.0, "", ""
+
+    df_entrees = df_fin[df_fin["Type"].astype(str).str.contains("Entrée", case=False, na=False)]
+    montant_total = 0.0
+    date_paie = ""
+    paye_par = ""
+    pattern_res = rf"(?<!\w){re.escape(res_clean)}(?!\w)"
+
+    for _, r in df_entrees.iterrows():
+        desc = str(r.get("Description", ""))
+        desc_low = desc.lower()
+        if not re.search(pattern_res, desc_low):
+            continue
+
+        match_tag = re.search(r"\[(\d{4}-\d{2})\]", desc)
+        if match_tag:
+            if match_tag.group(1) != mois_key:
+                continue
+        else:
+            d_row = str(r.get("Date", "")).strip()
+            if not d_row.startswith(mois_key):
+                continue
+
+        montant_total += to_float_safe(r.get("Montant (MAD)", 0))
+        date_paie = str(r.get("Date", "")).strip()
+        paye_par = str(r.get("Paye_Par", "")).strip()
+
+    return (montant_total > 0), montant_total, date_paie, paye_par
+
 # --- دالة تنظيف النصوص للـ PDF ---
 def txt_pdf(texte):
     t = str(texte)
@@ -336,7 +386,6 @@ def sync_historique_auto(df_plan, df_hist, df_clients, date_debut=None):
     if date_debut > aujourdhui:
         return df_hist, 0
 
-    # بناء لائحة الحصص الموجودة أصلاً في Historique (أي حالة كانت: En attente, Payé, Annulée, Reportée)
     existants = set()
     if df_hist is not None and not df_hist.empty:
         for _, r in df_hist.iterrows():
@@ -747,7 +796,8 @@ with st.sidebar:
     menu = option_menu(
         menu_title=None, 
         options=[
-            "Tableau de bord", 
+            "Tableau de bord",
+            "Suivi des Paiements",
             "Nouveau Client",
             "Gérer les clients",
             "Pointage & Paiements", 
@@ -757,7 +807,7 @@ with st.sidebar:
             "Gestion d'Équipe",
             "Planning"
         ],
-        icons=['graph-up-arrow', 'building-add', 'pencil-square', 'currency-dollar', 'wallet2', 'receipt', 'file-earmark-ruled', 'people', 'calendar-week'],
+        icons=['graph-up-arrow', 'cash-coin', 'building-add', 'pencil-square', 'currency-dollar', 'wallet2', 'receipt', 'file-earmark-ruled', 'people', 'calendar-week'],
         menu_icon="cast",
         default_index=0,
         styles={
@@ -1052,6 +1102,144 @@ if menu == "Tableau de bord":
         st.info("الجدول الزمني (Planning) فارغ حالياً.")
 
 # ==========================================
+# 1B. Suivi des Paiements (تتبع الخلاص الشهري)
+# ==========================================
+elif menu == "Suivi des Paiements":
+    st.header("💳 تتبع الخلاص الشهري للزبناء (Suivi des Paiements)")
+
+    df_clients = load_data("Clients", COLS_CLIENTS)
+    df_fin = load_data("Finances", COLS_FIN)
+    df_hist = load_data("Historique", COLS_HIST)
+
+    if df_clients.empty:
+        st.info("لا توجد إقامات مسجلة حالياً.")
+    else:
+        today = datetime.date.today()
+        col_m1, col_m2, col_m3 = st.columns([2, 1, 2])
+        with col_m1:
+            mois_num = st.selectbox(
+                "📅 اختر الشهر",
+                options=list(range(1, 13)),
+                index=today.month - 1,
+                format_func=lambda m: f"{m:02d} - {MOIS_AR[m]} ({MOIS_FR[m]})"
+            )
+        with col_m2:
+            annees_dispo = list(range(today.year - 1, today.year + 2))
+            annee_sel = st.selectbox("📆 السنة", options=annees_dispo, index=1)
+        with col_m3:
+            filtre_statut = st.radio(
+                "🔍 عرض:",
+                ["الكل", "⏳ باقي ما خلصوش", "✅ مخلصين"],
+                horizontal=True
+            )
+
+        mois_key = f"{annee_sel}-{mois_num:02d}"
+        st.markdown(f"### 🗓️ وضعية الخلاص لشهر **{MOIS_AR[mois_num]} {annee_sel}** (`{mois_key}`)")
+
+        lignes_suivi = []
+        total_attendu = 0.0
+        total_encaisse = 0.0
+        nb_payes = 0
+        clients_non_payes = []
+
+        for _, row in df_clients.iterrows():
+            res = str(row["Résidence"]).strip()
+            syndic = str(row.get("Responsable", "")).strip()
+            tel = str(row.get("Téléphone", "")).strip()
+            jour_p = str(row.get("Jour de paiement", "")).strip()
+            prix = to_float_safe(row.get("Prix TTC (MAD)", 0))
+            total_attendu += prix
+
+            est_paye, mnt_recu, d_paie, qui = verifier_paiement_client_mois(df_fin, res, mois_key)
+            if est_paye:
+                nb_payes += 1
+                total_encaisse += mnt_recu
+                statut_txt = "✅ مخلص"
+            else:
+                statut_txt = "⏳ باقي ما خلصش"
+                clients_non_payes.append({"Résidence": res, "Prix": prix, "Téléphone": tel, "Syndic": syndic})
+
+            lignes_suivi.append({
+                "اسم الإقامة": res,
+                "السانديك": syndic,
+                "الهاتف": tel,
+                "يوم الأداء": jour_p,
+                "ثمن الاشتراك": prix,
+                "المستخلص": mnt_recu if est_paye else 0.0,
+                "الحالة": statut_txt,
+                "تاريخ الخلاص": d_paie if est_paye else "—",
+                "شكون تسلم": qui if est_paye else "—"
+            })
+
+        total_clients_s = len(df_clients)
+        nb_impayes = total_clients_s - nb_payes
+        reste_a_encaisser = max(0.0, total_attendu - total_encaisse)
+        taux = (total_encaisse / total_attendu) if total_attendu > 0 else 0.0
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("✅ مخلصين", f"{nb_payes} / {total_clients_s}")
+        k2.metric("⏳ باقي ما خلصوش", f"{nb_impayes} إقامات")
+        k3.metric("💰 الفلوس اللي دخلات", f"{total_encaisse:,.0f} MAD")
+        k4.metric("🚨 باقي كيتسال فـ السوق", f"{reste_a_encaisser:,.0f} MAD")
+
+        st.progress(min(1.0, taux), text=f"نسبة التحصيل لشهر {MOIS_AR[mois_num]}: {taux * 100:.0f}% ({total_encaisse:,.0f} / {total_attendu:,.0f} MAD)")
+
+        df_suivi = pd.DataFrame(lignes_suivi)
+        if filtre_statut == "⏳ باقي ما خلصوش":
+            df_suivi_view = df_suivi[df_suivi["الحالة"] == "⏳ باقي ما خلصش"]
+        elif filtre_statut == "✅ مخلصين":
+            df_suivi_view = df_suivi[df_suivi["الحالة"] == "✅ مخلص"]
+        else:
+            df_suivi_view = df_suivi
+
+        if not df_suivi_view.empty:
+            def colorer_suivi(r):
+                if r["الحالة"] == "✅ مخلص":
+                    return ['background-color: #e8f5e9; color: #1b5e20; font-weight: bold;'] * len(r)
+                return ['background-color: #ffebee; color: #b71c1c; font-weight: bold;'] * len(r)
+
+            styled_suivi = df_suivi_view.style.apply(colorer_suivi, axis=1).format({
+                "ثمن الاشتراك": lambda v: f"{to_float_safe(v):,.0f} MAD",
+                "المستخلص": lambda v: f"{to_float_safe(v):,.0f} MAD"
+            })
+            st.dataframe(styled_suivi, use_container_width=True, hide_index=True)
+        else:
+            st.success("🎉 جميع الإقامات مخلصة فهاد الشهر!")
+
+        if clients_non_payes:
+            st.markdown("---")
+            st.subheader(f"⚡ تأكيد خلاص سريع لشهر {MOIS_AR[mois_num]} {annee_sel}")
+            with st.form("form_paiement_rapide_suivi"):
+                c_q1, c_q2, c_q3 = st.columns(3)
+                noms_impayes = [c["Résidence"] for c in clients_non_payes]
+                res_sel = c_q1.selectbox("🏢 اختر الإقامة اللي خلصات", noms_impayes)
+                prix_def = next((c["Prix"] for c in clients_non_payes if c["Résidence"] == res_sel), 500.0)
+                mnt_sel = c_q2.number_input("💵 المبلغ المستلم (MAD)", min_value=0.0, value=float(prix_def), step=50.0)
+                qui_sel = c_q3.selectbox("👤 شكون تسلم الفلوس", ["Caisse (صندوق الشركة)", "Driss", "Younnes"])
+                cloturer_hist = st.checkbox("✅ تصفية الحصص ديال هاد الإقامة فـ Historique (En attente → Payé)", value=True)
+
+                if st.form_submit_button("💰 تأكيد الخلاص الآن", type="primary", use_container_width=True):
+                    new_fin = pd.DataFrame([{
+                        "Date": str(datetime.date.today()),
+                        "Type": "Entrée (Revenu)",
+                        "Categorie": "Abonnement Résidence",
+                        "Montant (MAD)": mnt_sel,
+                        "Description": f"Paiement mensuel [{mois_key}] - {res_sel}",
+                        "Paye_Par": qui_sel
+                    }])
+                    df_fin = pd.concat([df_fin, new_fin], ignore_index=True)
+                    save_data("Finances", df_fin)
+
+                    if cloturer_hist and not df_hist.empty:
+                        mask_h = (df_hist["Résidence"].astype(str).str.strip() == res_sel) & (df_hist["Statut"].astype(str).str.strip() == "En attente")
+                        if mask_h.any():
+                            df_hist.loc[mask_h, "Statut"] = "Payé"
+                            save_data("Historique", df_hist)
+
+                    st.success(f"🎉 تم تسجيل خلاص **{res_sel}** لشهر **{MOIS_AR[mois_num]} {annee_sel}** ({mnt_sel:,.0f} MAD) بنجاح!")
+                    st.rerun()
+
+# ==========================================
 # 2. Nouveau Client
 # ==========================================
 elif menu == "Nouveau Client":
@@ -1221,12 +1409,13 @@ elif menu == "Pointage & Paiements":
                 df_hist.loc[(df_hist["Résidence"] == res_pay) & (df_hist["Statut"] == "En attente"), "Statut"] = "Payé"
                 save_data("Historique", df_hist)
                 
+                mois_courant_tag = datetime.date.today().strftime("%Y-%m")
                 new_fin = pd.DataFrame([{
                     "Date": str(datetime.date.today()),
                     "Type": "Entrée (Revenu)",
                     "Categorie": "Abonnement Résidence",
                     "Montant (MAD)": montant_encaisse,
-                    "Description": f"Paiement mensuel - {res_pay}",
+                    "Description": f"Paiement mensuel [{mois_courant_tag}] - {res_pay}",
                     "Paye_Par": encaisse_par
                 }])
                 df_fin = pd.concat([df_fin, new_fin], ignore_index=True)
